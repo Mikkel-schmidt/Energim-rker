@@ -19,6 +19,9 @@ sns.set_theme(
     rc=None,
 )
 # pd.options.display.float_format = '{:,.2f}'.format
+st.markdown("<style>body{background-color: Blue;}</style>", unsafe_allow_html=True)
+
+
 start_time = time.time()
 
 
@@ -193,7 +196,9 @@ def data_cleaning():
 
 df_build = data_cleaning()
 
-# %% Data Filtering ################################################################################################################################
+# %% Sidebar ################################################################################################################################
+st.sidebar.image("andel_logo_white_rgb.png")
+st.sidebar.write("Version 1.0")
 
 municipalities = st.sidebar.multiselect(
     "Vælg dine yndlingskommuner",
@@ -207,6 +212,8 @@ bygningstyper = st.sidebar.multiselect(
     default=["Private"],
 )
 
+
+# %%
 
 st.title("The brand new shark (:whale:) application")
 
