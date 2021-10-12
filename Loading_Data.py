@@ -72,16 +72,21 @@ print("--- Results %s seconds ---" % (time.time() - start_time))
 
 # %%
 
-print(df_build.dtypes)
+print(df_build.dtypes)-.
+df_creation.columns
+df_input.columns
+df_build.columns
+df_prop.columns
+df_result.columns
 
 
 # %%
 
-df_creation.columns = df_creation.columns.str.replace(" ", "_")
-df_input.columns = df_input.columns.str.replace(" ", "_")
-df_build.columns = df_build.columns.str.replace(" ", "_")
-df_prop.columns = df_prop.columns.str.replace(" ", "_")
-df_result.columns = df_result.columns.str.replace(" ", "_")
+# df_creation.columns = df_creation.columns.str.replace(" ", "_")
+# df_input.columns = df_input.columns.str.replace(" ", "_")
+# df_build.columns = df_build.columns.str.replace(" ", "_")
+# df_prop.columns = df_prop.columns.str.replace(" ", "_")
+# df_result.columns = df_result.columns.str.replace(" ", "_")
 
 df_build["municipality"] = df_build["municipalitynumber"]
 df_build["municipality"].replace(

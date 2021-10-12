@@ -8,7 +8,11 @@ import streamlit as st
 from tqdm import tqdm
 import time
 
-st.set_page_config(layout="wide", page_title="SHARK APP", page_icon=":shark:")
+# Custom imports
+#from eksterne_funktioner import
+
+
+st.set_page_config(layout="wide", page_title="Energimærke forslag", page_icon="andel_a.png")
 sns.set_theme(
     context="notebook",
     style="darkgrid",
@@ -18,34 +22,49 @@ sns.set_theme(
     color_codes=True,
     rc=None,
 )
+
+
+
 # pd.options.display.float_format = '{:,.2f}'.format
-# st.markdown("<style>body{background-color: Blue;}</style>", unsafe_allow_html=True)
-st.markdown(
-    f"""
-<style>
-    .reportview-container .main .block-container{{
-        max-width: 90%;
-        padding-top: 5rem;
-        padding-right: 5rem;
-        padding-left: 5rem;
-        padding-bottom: 5rem;
-    }}
-    img{{
-    max-width:40%;
-    margin-bottom:40px;
-    }}
-</style>
-""",
-    unsafe_allow_html=True,
-)
+# st.markdown("<style>body{background-color: Green;}</style>", unsafe_allow_html=True)
 
 
 start_time = time.time()
+st.sidebar.image("andel_logo_white_rgb.png")
+st.sidebar.write("Version 1.0")
+with st.sidebar.expander("Upload BBR data"):
+    st.write("Data skal stå på følgende måde:")
+    st.code(
+        """BBR Kommunenr, BBR Ejendomsnummer
+BBR Kommunenr, BBR Ejendomsnummer
+..."""
+    )
+    uploaded_BBR = st.file_uploader("BBR data", type=["txt", "csv"])
+    if uploaded_BBR is not None:
+        BBR_list = list(np.loadtxt(uploaded_BBR, delimiter=",", dtype="int"))
+        st.code(BBR_list)
+    else:
+        BBR_list=[]
+
+with st.sidebar.expander("Upload Energimærke ID"):
+    st.write("Data skal stå i en kolonne af:")
+    st.code(
+        """EnergimærkeID
+EnergimærkeID
+..."""
+    )
+    uploaded_enerID = st.file_uploader("EnergimærkeID", type=["txt", "csv"])
+    if uploaded_enerID is not None:
+        ener_list = list(np.loadtxt(uploaded_enerID, dtype="int"))
+        st.code(ener_list)
+    else:
+        ener_list=[]
 
 
 # %% Data loading ###############################################################################################################################
-@st.cache(suppress_st_warning=True, allow_output_mutation=True)
-def connect():
+@st.experimental_singleton
+def database_forbindelse():
+    start_time = time.time()
     SERVER = "redshift.bi.obviux.dk"
     PORT = 5439  # Redshift default
     USER = "mrs"
@@ -65,75 +84,108 @@ def connect():
     sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals;"
     cursor = cnxn.cursor()
     print(cursor.execute(sql).fetchall())
-
-    start_time = time.time()
-    df_creation = pd.read_sql(
-        """select top 10 * from energylabels.creation_data""", cnxn
-    )
-    print("--- Creation %s seconds ---" % (time.time() - start_time))
-    df_build = pd.read_sql(
-        """select * from energylabels.building_data WHERE ownership='Municipality' """,
-        cnxn,
-    )
-    print("--- Build %s seconds ---" % (time.time() - start_time))
-    # df_build.columns = df_build.columns.str.replace(" ", "_")
-    # list = df_build["energylabel_id"].tolist()
-    # list = ",".join(map(str, list))
-    # print(list)
-    query = """
-    SELECT top 1000000 *
-    FROM energylabels.proposals
-    """
-    # INNER JOIN energylabels.building_data
-    # ON 'energylabels.building_data.energylabel id' ='energylabels.proposals.energylabel id'
-
-    # WHERE EXISTS (SELECT 'energylabel id' FROM energylabels.building_data
-    # WHERE 'energylabels.building_data.energylabel id' = 'energylabels.proposals.energylabel id')
-    # """  # AND 'energylabels.building_data.energylabel id' = 'energylabels.proposals.energylabel id'
-    # )"""
-    # RIGHT JOIN redshift.energylabels.building_data
-    # ON 'redshift.energylabels.proposals.energylabel id' = 'redshift.energylabels.building_data.energylabel id'
-
-    # WHERE EXISTS (SELECT * FROM redshift.energylabels.building_data
-    # WHERE ownership='Municipality'
-    # AND 'redshift.energylabels.building_data.energylabel id' = 'redshift.energylabels.proposals.energylabel id'
-
-    #'energylabel id', 'proposal id', 'shorttext', 'lifetime', 'investment', 'data_input_type', 'data_value'
-    n = 100
-    # df_prop = pd.read_sql(query, cnxn,)
-    dfs = []
-    for chunk in tqdm(pd.read_sql(query, con=cnxn, chunksize=n)):
-        dfs.append(chunk)
-        # print("--- Proposals %s seconds ---" % (time.time() - start_time))
-    df_prop = pd.concat(dfs)
-    print("--- Proposals %s seconds ---" % (time.time() - start_time))
-    data_time = time.time() - start_time
     print("Connected to Redshift")
+    return cnxn
+
+@st.experimental_memo
+def hent_data(_cnxn, BBR_list, ener_list):
+    if BBR_list:
+        print('BBR Data')
+        BBR = np.array(BBR_list)
+
+        df_creation = pd.read_sql("""select top 10 *
+                                  from energylabels.creation_data
+                                  where municipalitynumber IN {}
+                                  AND propertynumber IN {};""".format(
+                                  tuple(BBR[:,0]), tuple(BBR[:,1])
+                                  ), cnxn)
+        print("--- Creation %s seconds ---" % (time.time() - start_time))
+
+        df_build = pd.read_sql("""select *
+                                from energylabels.building_data
+                                where municipalitynumber IN {}
+                                AND propertynumber IN {};""".format(
+                                tuple(BBR[:,0]), tuple(BBR[:,1])
+                                ), cnxn )
+        print("--- Build %s seconds ---" % (time.time() - start_time))
+
+        query = """
+        SELECT top 1000000 *
+        FROM energylabels.proposals
+        WHERE municipalitynumber IN {}
+        AND propertynumber IN {};""".format(
+            tuple(BBR[:,0]), tuple(BBR[:,1])
+        )
+
+        pd.read_sql(query, con=cnxn, chunksize=n)
+        print("--- Proposals %s seconds ---" % (time.time() - start_time))
+
+    elif ener_list:
+        print('Energimærke Data')
+        df_creation = pd.read_sql("""select top 10 * from energylabels.creation_data where energylabel_id IN {}""", cnxn)
+        print("--- Creation %s seconds ---" % (time.time() - start_time))
+
+        df_build = pd.read_sql("""select * from energylabels.building_data where energylabel_id IN {}""", cnxn )
+        print("--- Build %s seconds ---" % (time.time() - start_time))
+
+        query = """
+        SELECT top 1000000 *
+        FROM energylabels.proposals
+        """
+        pd.read_sql(query, con=cnxn, chunksize=n)
+        print("--- Proposals %s seconds ---" % (time.time() - start_time))
+
+    else:
+        print('Normal datahentning')
+        df_creation = pd.read_sql(
+            """select top 10 * from energylabels.creation_data""", cnxn)
+        print("--- Creation %s seconds ---" % (time.time() - start_time))
+
+        df_build = pd.read_sql(
+            """select energylabel_id, municipalitynumber, propertynumber, streetname, housenumber, postalcode, postalcity, ownership, usecode, dwellingarea, commercialarea
+            from energylabels.building_data
+            where ownership = 'Municipality'""", cnxn)
+        print("--- Build %s seconds ---" % (time.time() - start_time))
+        eID_list = df_build['energylabel_id'].unique()
+
+        #df_input = pd.read_sql(
+        #    """select * from energylabels.input_data """, cnxn)
+        #print("--- Result %s seconds ---" % (time.time() - start_time))
+
+        #df_result = pd.read_sql(
+        #    """select energylabel_id, resultforallprofitable_energylabelclassification, resultforallproposals_energylabelclassification, energylabelclassification from energylabels.result_data_energylabels """, cnxn)
+        #print("--- Result %s seconds ---" % (time.time() - start_time))
+
+        query = """
+        SELECT *
+        FROM energylabels.proposals
+        WHERE energylabel_id
+        IN {};
+        """.format(tuple(eID_list))
+
+        #'energylabel id', 'proposal id', 'shorttext', 'lifetime', 'investment', 'data_input_type', 'data_value'
+        n = 100000
+        dfs = []
+        for chunk in tqdm(pd.read_sql(query, con=cnxn, chunksize=n)):
+            dfs.append(chunk)
+        df_prop = pd.concat(dfs)
+        print("--- Proposals %s seconds ---" % (time.time() - start_time))
+    data_time = time.time() - start_time
+
 
     return df_creation, df_build, df_prop, data_time  #
 
-
-df_creation, df_build, df_prop, data_time = connect()
-
+cnxn = database_forbindelse()
+df_creation, df_build, df_prop, data_time = hent_data(cnxn, BBR_list, ener_list)
 
 # %% Data cleaning ################################################################################################################################
-col0_1, col0_2 = st.columns(2)
-col0_1.header("Raw data")
-col0_1.write("df_build")
-col0_1.write(df_build[0:10000])
-col0_2.write("df_prop")
-col0_2.write(df_prop[0:10000])
 
 
 @st.cache
-def data_cleaning():
-    df_creation.columns = df_creation.columns.str.replace(" ", "_")
-    # df_input.columns    = df_input.columns.str.replace(' ', '_')
-    df_build.columns = df_build.columns.str.replace(" ", "_")
-    df_prop.columns = df_prop.columns.str.replace(" ", "_")
-    # df_result.columns   = df_result.columns.str.replace(' ', '_')
-    df_build["municipality"] = df_build["municipalitynumber"]
-    df_build["municipality"].replace(
+def data_cleaning_df_build(df):
+    df.columns = df.columns.str.replace(" ", "_")
+    df["municipality"] = df["municipalitynumber"]
+    df["municipality"].replace(
         {
             "101": "København",
             "147": "Frederiksberg",
@@ -231,65 +283,248 @@ def data_cleaning():
         },
         inplace=True,
     )
-    df_build["address"] = (
-        df_build[["postalcode", "postalcity", "streetname", "housenumber"]]
+    df["use"] = df["usecode"]
+    df["use"].replace(
+        {
+            "110": "110 - Stuehus til landbrugsejendom",
+            "120": "120 - Fritliggende enfamiliehus",
+            "121": "121 - Sammenbygget enfamiliehus",
+            "122": "122 - Fritliggende enfamiliehus i tæt-lav bebyggelse",
+            "130": "130 - (UDFASES) Række-, kæde-, eller dobbelthus (lodret adskillelse mellem enhederne)",
+            "131": "131 - Række-, kæde- og klyngehus",
+            "132": "132 - Dobbelthus",
+            "140": "140 - Etagebolig-bygning, flerfamiliehus eller to-familiehus",
+            "150": "150 - Kollegium",
+            "160": "160 - Boligbygning til døgninstitution",
+            "185": "185 - Anneks i tilknytning til helårsbolig",
+            "190": "190 - Anden bygning til helårsbeboelse",
+            "210": "210 - (UDFASES) Bygning til erhvervsmæssig produktion vedrørende landbrug, gartneri, råstofudvinding o. lign",
+            "211": "211 - Stald til svin",
+            "212": "212 - Stald til kvæg, får mv.",
+            "213": "213 - Stald til fjerkræ",
+            "214": "214 - Minkhal",
+            "215": "215 - Væksthus",
+            "216": "216 - Lade til foder, afgrøder mv.",
+            "217": "217 - Maskinhus, garage mv.",
+            "218": "218 - Lade til halm, hø mv.",
+            "219": "219 - Anden bygning til landbrug mv.",
+            "220": "220 - (UDFASES) Bygning til erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o.lign.)",
+            "221": "221 - Bygning til industri med integreret produktionsapparat",
+            "222": "222 - Bygning til industri uden integreret produktionsapparat",
+            "223": "223 - Værksted",
+            "229": "229 - Anden bygning til produktion",
+            "230": "230 - (UDFASES) El-, gas-, vand- eller varmeværk, forbrændingsanstalt m.v.",
+            "231": "231 - Bygning til energiproduktion",
+            "232": "232 - Bygning til forsyning- og energidistribution",
+            "233": "233 - Bygning til vandforsyning",
+            "234": "234 - Bygning til håndtering af affald og spildevand",
+            "239": "239 - Anden bygning til energiproduktion og -distribution",
+            "290": "290 - (UDFASES) Anden bygning til landbrug, industri etc.",
+            "310": "310 - (UDFASES) Transport- og garageanlæg (fragtmandshal, lufthavnsbygning, banegårdsbygning, parkeringshus). Garage med plads til et eller to køretøjer registreres med anvendelseskode 910",
+            "311": "311 - Bygning til jernbane- og busdrift",
+            "312": "312 - Bygning til luftfart",
+            "313": "313 - Bygning til parkering- og transportanlæg",
+            "314": "314 - Bygning til parkering af flere end to køretøjer i tilknytning til boliger",
+            "315": "315 - Havneanlæg",
+            "319": "319 - Andet transportanlæg",
+            "320": "320 - (UDFASES) Bygning til kontor, handel, lager, herunder offentlig administration",
+            "321": "321 - Bygning til kontor",
+            "322": "322 - Bygning til detailhandel",
+            "323": "323 - Bygning til lager",
+            "324": "324 - Butikscenter",
+            "325": "325 - Tankstation",
+            "329": "329 - Anden bygning til kontor, handel og lager",
+            "330": "330 - (UDFASES) Bygning til hotel, restaurant, vaskeri, frisør og anden servicevirksomhed",
+            "331": "331 - Hotel, kro eller konferencecenter med overnatning",
+            "332": "332 - Bed & breakfast mv.",
+            "333": "333 - Restaurant, café og konferencecenter uden overnatning",
+            "334": "334 - Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
+            "339": "339 - Anden bygning til serviceerhverv",
+            "390": "390 - (UDFASES) Anden bygning til transport, handel etc",
+            "410": "410 - (UDFASES) Bygning til biograf, teater, erhvervsmæssig udstilling, bibliotek, museum, kirke o. lign.",
+            "411": "411 - Biograf, teater, koncertsted mv.",
+            "412": "412 - Museum",
+            "413": "413 - Bibliotek",
+            "414": "414 - Kirke eller anden bygning til trosudøvelse for statsanerkendte trossamfund",
+            "415": "415 - Forsamlingshus",
+            "416": "416 - Forlystelsespark",
+            "419": "419 - Anden bygning til kulturelle formål",
+            "420": "420 - (UDFASES) Bygning til undervisning og forskning (skole, gymnasium, forskningslabratorium o.lign.).",
+            "421": "421 - Grundskole",
+            "422": "422 - Universitet",
+            "429": "429 - Anden bygning til undervisning og forskning",
+            "430": "430 - (UDFASES) Bygning til hospital, sygehjem, fødeklinik o. lign.",
+            "431": "431 - Hospital og sygehus",
+            "432": "432 - Hospice, behandlingshjem mv.",
+            "433": "433 - Sundhedscenter, lægehus, fødeklinik mv.",
+            "439": "439 - Anden bygning til sundhedsformål",
+            "440": "440 - (UDFASES) Bygning til daginstitution",
+            "441": "441 - Daginstitution",
+            "442": "442 - Servicefunktion på døgninstitution",
+            "443": "443 - Kaserne",
+            "444": "444 - Fængsel, arresthus mv.",
+            "449": "449 - Anden bygning til institutionsformål",
+            "490": "490 - (UDFASES) Bygning til anden institution, herunder kaserne, fængsel o. lign.",
+            "510": "510 - Sommerhus",
+            "520": "520 - (UDFASES) Bygning til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+            "521": "521 - Feriecenter, center til campingplads mv.",
+            "522": "522 - Bygning med ferielejligheder til erhvervsmæssig udlejning",
+            "523": "523 - Bygning med ferielejligheder til eget brug",
+            "529": "529 - Anden bygning til ferieformål",
+            "530": "530 - (UDFASES) Bygning i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.)",
+            "531": "531 - Klubhus i forbindelse med fritid og idræt",
+            "532": "532 - Svømmehal",
+            "533": "533 - Idrætshal",
+            "534": "534 - Tribune i forbindelse med stadion",
+            "535": "535 - Bygning til træning og opstaldning af heste",
+            "539": "539 - Anden bygning til idrætformål",
+            "540": "540 - Kolonihavehus",
+            "585": "585 - Anneks i tilknytning til fritids- og sommerhus",
+            "590": "590 - Anden bygning til fritidsformål",
+            "910": "910 - Garage (med plads til et eller to køretøjer)",
+            "920": "920 - Carport",
+            "930": "930 - Udhus",
+            "940": "940 - Drivhus",
+            "950": "950 - Fritliggende overdækning",
+            "960": "960 - Fritliggende udestue",
+            "970": "970 - Tiloversbleven landbrugsbygning",
+            "990": "990 - Faldefærdig bygning",
+            "999": "999 - Ukendt bygning",
+        },
+        inplace=True,
+    )
+    df["address"] = (
+        df[["postalcode", "postalcity", "streetname", "housenumber"]]
         .astype(str)
         .agg(" ".join, axis=1)
     )
-    return df_creation, df_build, df_prop
+    df["dwellingarea"] = pd.to_numeric(df["dwellingarea"])
+    df["commercialarea"] = pd.to_numeric(df["commercialarea"])
+    return df
 
 
-df_creation, df_build, df_prop = data_cleaning()
+@st.cache
+def data_cleaning_df_prop(df):
+    df.columns = df.columns.str.replace(" ", "_")
+    df["Seeb_beskrivelse"] = df["seebclassification"]
+    df["Seeb_beskrivelse"].replace(
+        {
+            "1-0-0-0": "Bygningen",
+            "1-1-0-0": "Tag og loft",
+            "1-1-1-0": "Loft",
+            "1-1-2-0": "Fladt tag",
+            "1-2-0-0": "Ydervægge",
+            "1-2-1-0": "Hule ydervægge",
+            "1-2-2-0": "Massive ydervægge",
+            "1-2-3-0": "Lette ydervægge",
+            "1-2-1-1": "Hule vægge mod uopvarmet rum",
+            "1-2-2-1": "Massive vægge mod uopvarmet rum",
+            "1-2-3-1": "Lette vægge mod uopvarmet rum",
+            "1-2-4-0": "Kælder ydervægge",
+            "1-3-0-0": "Vinduer, ovenlys og døre",
+            "1-3-1-0": "Vinduer",
+            "1-3-2-0": "Ovenlys",
+            "1-3-3-0": "Yderdøre",
+            "1-4-0-0": "Gulve",
+            "1-4-1-0": "Terrændæk",
+            "1-4-2-0": "Etageadskillelse",
+            "1-4-3-0": "Krybekælder",
+            "1-4-4-0": "Kældergulv",
+            "1-4-1-1": "Terrændæk med gulvvarme",
+            "1-4-2-1": "Etageadskillelse med gulvvarme",
+            "1-4-3-1": "Krybekælder med gulvvarme",
+            "1-4-4-1": "Kældergulv med gulvvarme",
+            "1-4-5-0": "Linjetab",
+            "1-5-0-0": "Ventilation",
+            "1-5-1-0": "Ventilation",
+            "1-5-2-0": "Ventilationskanaler",
+            "1-5-3-0": "Køling",
+            "1-6-0-0": "Internt varmetilskud",
+            "1-6-1-0": "Internt varmetilskud",
+            "2-0-0-0": "Varmeanlæg",
+            "2-1-0-0": "Varmeanlæg",
+            "2-1-1-0": "Varmeanlæg",
+            "2-1-2-0": "Kedler",
+            "2-1-3-0": "Fjernvarme",
+            "2-1-4-0": "Ovne",
+            "2-1-5-0": "Varmepumper",
+            "2-1-6-0": "Solvarme",
+            "2-2-0-0": "Varmefordeling",
+            "2-2-1-0": "Varmefordeling",
+            "2-2-2-0": "Varmerør",
+            "2-2-3-0": "Varmefordelingspumper",
+            "2-2-4-0": "Automatik",
+            "3-0-0-0": "Varmt og koldt vand",
+            "3-1-0-0": "Varmt brugsvand",
+            "3-1-1-0": "Varmt brugsvand",
+            "3-1-2-0": "Armaturer",
+            "3-1-3-0": "Varmtvandsrør",
+            "3-1-4-0": "Varmtvandspumper",
+            "3-1-5-0": "Varmtvandsbeholder",
+            "3-2-0-0": "Koldt vand",
+            "3-2-1-0": "Koldt vand",
+            "4-0-0-0": "El",
+            "4-1-0-0": "El",
+            "4-1-1-0": "Belysning",
+            "4-1-2-0": "Apparater",
+            "4-1-3-0": "Solceller",
+            "4-1-4-0": "Vindmøller",
+        },
+        inplace=True,
+    )
+    df["investment"] = pd.to_numeric(df["investment"])
+    return df
+
+
+df_build = data_cleaning_df_build(df_build)
+df_prop = data_cleaning_df_prop(df_prop)
 
 # %% Sidebar ################################################################################################################################
-st.sidebar.image("andel_logo_white_rgb.png")
-st.sidebar.write("Version 1.0")
 
-municipalities = st.sidebar.multiselect(
-    "Vælg dine yndlingskommuner",
-    options=list(np.unique(df_build["municipality"])),
-    default=["København", "Ballerup"],
-)
+with st.sidebar.expander("Filtrering af data"):
+    municipalities = st.multiselect(
+        "Vælg dine yndlingskommuner",
+        options=list(np.unique(df_build["municipality"])),
+        default=["København", "Ballerup"],
+    )
 
-bygningstyper = st.sidebar.multiselect(
-    "Hvilken type bygninger skal medtages",
-    options=list(np.unique(df_build["ownership"])),
-    default=["Municipality"],
-)
+    bygningstyper = st.multiselect(
+        "Hvilken type bygninger skal medtages",
+        options=list(np.unique(df_build["ownership"])),
+        default=["Municipality"],
+    )
+
+    brugskode = st.multiselect(
+        "Hvilke brugstyper skal medtages?",
+        options=list(np.unique(df_build["use"])),
+    )
+
+    Teknik = st.multiselect(
+        "Hvilke teknikområder?",
+        options=list(df_prop["Seeb_beskrivelse"].unique()),
+    )
 
 
 # %%
 
-st.title("The brand new shark (:whale:) application")
 
-col1_1, col2_1 = st.columns(2)
-col1_1.header("Plotting")
-col1_1.subheader(
-    "Det tog %.6s sekunder at hente data " % data_time,
-)
+@st.experimental_memo
+def bygningstype(bygningstyper, municipalities):
+    """ Filters if the data is in the municipalities chosen and in the types of buildings chosen.
+    Also merges the proposals and building_data tables. """
 
-
-fig, ax = plt.subplots(figsize=(9, 4))
-hist_values = df_build[df_build["municipality"].isin(municipalities)]
-ax = sns.countplot(x="ownership", hue="municipality", data=hist_values)
-ax.tick_params(labelrotation=90)
-ax.set_title("Fordeling af energimærker på bygningstype")
-col1_1.pyplot(fig)
-
-
-@st.cache(allow_output_mutation=True)
-def bygningstype(bygningstyper):
+    hist_values = df_build[df_build["municipality"].isin(municipalities)]
     energy = df_prop[df_prop["energylabel_id"].isin(hist_values["energylabel_id"])]
     energy = energy.merge(hist_values, on="energylabel_id")
-    energy["investment"] = pd.to_numeric(energy["investment"])
+
     energy = energy[energy["ownership"].isin(bygningstyper)]
     return energy
 
 
-energy = bygningstype(bygningstyper)
+energy = bygningstype(bygningstyper, municipalities)
 
 
-@st.cache(allow_output_mutation=True)
+@st.experimental_memo
 def individuelle_forslag(energy):
     proposals = energy
     for i in tqdm(proposals["energylabel_id"].unique().astype("int64")):
@@ -302,16 +537,55 @@ def individuelle_forslag(energy):
 
 proposals = individuelle_forslag(energy)
 
+st.title("Filtrering af energimærkeforslag")
 
-col2_1.header("Raw data")
-col2_1.write("df_build")
-col2_1.write(df_build[0:10000])
-col2_1.write("df_prop")
-col2_1.write(energy[0:10000])
-col2_1.write("proposals")
-col2_1.write(proposals[0:10000])
+col0_1, col0_2, col0_3, col0_4 = st.columns(4)
+col0_1.subheader("Antal energimærker")
+col0_1.code(df_build["energylabel_id"].nunique())
+col0_2.subheader("Antal energimærker i forslagstabel")
+col0_2.code(df_prop["energylabel_id"].nunique())
+col0_3.subheader("Tid for at hente data")
+col0_3.code(data_time)
+col0_4.subheader("Samlet investering i DKK")
+col0_4.code(np.sum(proposals["investment"]))
 
-col1_2, col2_2 = st.columns(2)
+with st.expander("Overblik over indhentet data"):
+    container = st.container()
+    col1_1, col1_2 = container.columns(2)
+
+
+fig, ax = plt.subplots(figsize=(9, 6))
+hist_values = df_build[df_build["municipality"].isin(municipalities)]
+ax = sns.countplot(x="ownership", hue="municipality", data=hist_values)
+ax.tick_params(labelrotation=90)
+ax.set_ylabel("Antal Energimærker")
+ax.set_title("Fordeling af energimærker på bygningstype")
+col1_1.pyplot(fig)
+
+fig1, ax1 = plt.subplots(figsize=(9, 6))
+area = df_build['dwellingarea'] + df_build['commercialarea']
+hist_values['area'] = area
+ax1 = sns.violinplot(x='use', y='area', hue="municipality", data=hist_values, kind="box")
+ax1.tick_params(axis='both', labelrotation=90)
+ax1.set_title("Fordeling af kvadratmeter i energimærkede bygninger")
+col1_2.pyplot(fig1)
+
+col1_1.write("df_build")
+col1_1.write(df_build[0:10000])
+col1_2.write("df_prop")
+col1_2.write(df_prop[0:10000])
+
+fig, ax = plt.subplots(figsize=(9, 6))
+hej = hist_values['usecode'].value_counts().rename_axis('labels').reset_index(name='counts')
+col1_1.write(hej)
+print(hej)
+ax = plt.pie(hej['counts'], labels=hej['labels'], autopct='%1.1f%%', startangle=90, pctdistance=0.85)
+plt.tight_layout()
+container.pyplot(fig)
+
+with st.expander("Investering og levetid visualiseret"):
+    container2 = st.container()
+    col2_1, col2_2 = container2.columns(2)
 
 fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
 ax_hist = sns.histplot(
@@ -324,8 +598,8 @@ ax_hist = sns.histplot(
 )
 ax_hist.tick_params(labelrotation=0)
 ax_hist.set_title("Investering")
-ax_hist.set_xlim(0, 300000)
-col1_2.pyplot(fig_hist)
+#ax_hist.set_xlim(0, 300000)
+col2_1.pyplot(fig_hist)
 
 fig_his, ax_his = plt.subplots(figsize=(9, 4))
 ax_his = sns.histplot(
@@ -339,7 +613,7 @@ ax_his = sns.histplot(
 ax_his.tick_params(labelrotation=0)
 ax_his.set_title("Investering < 50000 DKK")
 ax_his.set_xlim(0, 50000)
-col1_2.pyplot(fig_his)
+col2_1.pyplot(fig_his)
 
 
 fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
@@ -350,9 +624,9 @@ col2_2.pyplot(fig_hist)
 
 
 fig, ax = plt.subplots(figsize=(9, 4))
-ax = sns.countplot(x="data_input_type", hue="municipality", data=proposals)
+ax = sns.countplot(x="Seeb_beskrivelse", hue="municipality", data=proposals)
 ax.tick_params(labelrotation=90)
-col1_2.pyplot(fig)
+col2_1.pyplot(fig)
 
 
 option = col2_2.selectbox(
@@ -365,557 +639,580 @@ col2_2.table(
     ].sort_values(by="investment")
 )
 
-
-col3_1, col3_2 = st.columns(2)
+with st.expander("Teknikområder og filtering visualiseret"):
+    container3 = st.container()
+    col3_1, col3_2 = container3.columns(2)
 
 
 proposals["filtered_shorttext"] = proposals["shorttext"].astype(str)
 proposals["not_filtered_shorttext"] = proposals["shorttext"].astype(str)
 
 
-def filter_shorttext_window(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("energi", case=False),
-        "filtered_shorttext",
-    ] = "Energirude udskiftning"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("termorude", case=False),
-        "filtered_shorttext",
-    ] = "Termorude udskiftning"
-    # Forsatsrude
-    data.loc[
-        data["filtered_shorttext"].str.contains("forsatsrude", case=False),
-        "filtered_shorttext",
-    ] = "Forsatsrude"
-    # Yderdør
-    data.loc[
-        data["filtered_shorttext"].str.contains("yderdør", case=False),
-        "filtered_shorttext",
-    ] = "Yderdør"
-    # terasse
-    data.loc[
-        data["filtered_shorttext"].str.contains("terrasse", case=False),
-        "filtered_shorttext",
-    ] = "Terrasse"
-    # Kælder
-    data.loc[
-        data["filtered_shorttext"].str.contains("kælder", case=False),
-        "filtered_shorttext",
-    ] = "Kælder"
-    # Vinduer andet
-    data.loc[
-        data["filtered_shorttext"].str.contains("vindue", case=False),
-        "filtered_shorttext",
-    ] = "andet"
-    # Dør andet
-    data.loc[
-        data["filtered_shorttext"].str.contains("dør", case=False),
-        "filtered_shorttext",
-    ] = "Vin og dør andet"
-    Search_for_These_values = [
-        "energi",
-        "termorude",
-        "forsatsrude",
-        "yderdør",
-        "terrasse",
-        "kælder",
-        "vindue",
-        "dør",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "Vindue Andet generelt"
-    return data
-
-
-def filter_shorttext_buildingpart(data):
-    # Hanebånd
-    data.loc[
-        data["filtered_shorttext"].str.contains("hanebånd", case=False),
-        "filtered_shorttext",
-    ] = "Hanebånd efteris-olering"
-    # Skråvæg
-    data.loc[
-        data["filtered_shorttext"].str.contains("skrå", case=False),
-        "filtered_shorttext",
-    ] = "skråvæg efteris-olering"
-    # Ydervæg
-    data.loc[
-        data["filtered_shorttext"].str.contains("ydervæg", case=False),
-        "filtered_shorttext",
-    ] = "ydervæg efteris-olering"
-    # skunk
-    data.loc[
-        data["filtered_shorttext"].str.contains("skunk", case=False),
-        "filtered_shorttext",
-    ] = "skunk efteris-olering"
-    # kvist
-    data.loc[
-        data["filtered_shorttext"].str.contains("kvist", case=False),
-        "filtered_shorttext",
-    ] = "kvist efteris-olering"
-    # Gulv
-    data.loc[
-        data["filtered_shorttext"].str.contains("gulv", case=False),
-        "filtered_shorttext",
-    ] = "gulv"
-    # Loft
-    data.loc[
-        data["filtered_shorttext"].str.contains("loft", case=False),
-        "filtered_shorttext",
-    ] = "loft/tag efteris-olering"
-    # Tag
-    data.loc[
-        data["filtered_shorttext"].str.contains("tag", case=False),
-        "filtered_shorttext",
-    ] = "loft/tag efteris-olering"
-    # Hulmur
-    data.loc[
-        data["filtered_shorttext"].str.contains("Hulmur", case=False),
-        "filtered_shorttext",
-    ] = "Hulmur is-olering"
-    # Hanebånd
-    data.loc[
-        data["filtered_shorttext"].str.contains("etageadskil", case=False),
-        "filtered_shorttext",
-    ] = "etageadskillelse is-olering"
-    # Hanebånd
-    data.loc[
-        data["filtered_shorttext"].str.contains("kælder", case=False),
-        "filtered_shorttext",
-    ] = "kælder is-olering"
-    # Tag
-    data.loc[
-        data["filtered_shorttext"].str.contains("ræn", case=False),
-        "filtered_shorttext",
-    ] = "terrændæk efteris-olering"
-    # Tag
-    data.loc[
-        data["filtered_shorttext"].str.contains("dør", case=False),
-        "filtered_shorttext",
-    ] = "døre"
-    # Tag
-    data.loc[
-        data["filtered_shorttext"].str.contains("vindue", case=False),
-        "filtered_shorttext",
-    ] = "vindue"
-    # Tag
-    data.loc[
-        data["filtered_shorttext"].str.contains("rude", case=False),
-        "filtered_shorttext",
-    ] = "vindue"
-    # Andet iso
-    data.loc[
-        data["filtered_shorttext"].str.contains("iso", case=False),
-        "filtered_shorttext",
-    ] = "Andet isolering"
-    Search_for_These_values = [
-        "hanebånd",
-        "skrå",
-        "ydervæg",
-        "skunk",
-        "kvist",
-        "gulv",
-        "loft",
-        "tag",
-        "hulmur",
-        "etageadskil",
-        "kælder",
-        "ræn",
-        "dør",
-        "vindue",
-        "rude",
-        "iso",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "Build andet"
-    return data
-
-
-def filter_shorttext_ColdWater(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("toilet", case=False),
-        "filtered_shorttext",
-    ] = "Toilet"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("WC", case=False),
-        "filtered_shorttext",
-    ] = "Toilet"
-    # Forsatsrude
-    data.loc[
-        data["filtered_shorttext"].str.contains("brus", case=False),
-        "filtered_shorttext",
-    ] = "bruser"
-    # Yderdør
-    data.loc[
-        data["filtered_shorttext"].str.contains("vask", case=False),
-        "filtered_shorttext",
-    ] = "Håndvask"
-    # terasse
-    data.loc[
-        data["filtered_shorttext"].str.contains("blanding", case=False),
-        "filtered_shorttext",
-    ] = "Blandingsbatteri"
-    Search_for_These_values = [
-        "toilet",
-        "WC",
-        "brus",
-        "vask",
-        "blanding",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "CW Andet"
-    return data
-
-
-def filter_shorttext_HeatDistributionPump(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("pumpe", case=False),
-        "filtered_shorttext",
-    ] = "Pumpe"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("Varme", case=False),
-        "filtered_shorttext",
-    ] = "Varme"
-    # Forsatsrude
-    data.loc[
-        data["filtered_shorttext"].str.contains("gas", case=False),
-        "filtered_shorttext",
-    ] = "Gas"
-    # Yderdør
-    data.loc[
-        data["filtered_shorttext"].str.contains("vand", case=False),
-        "filtered_shorttext",
-    ] = "vand"
-    Search_for_These_values = [
-        "pumpe",
-        "Varme",
-        "gas",
-        "vand",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HDP Andet"
-    return data
-
-
-def filter_shorttext_HeatDistributionPipe(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("rør", case=False),
-        "filtered_shorttext",
-    ] = "Rør isolering"
-    Search_for_These_values = [
-        "rør",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HDpipe Andet"
-    return data
-
-
-def filter_shorttext_HotWaterPipe(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("rør", case=False),
-        "filtered_shorttext",
-    ] = "Rør"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("solvarme", case=False),
-        "filtered_shorttext",
-    ] = "Solvarme"
-    Search_for_These_values = [
-        "rør",
-        "solvarme",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HWP Andet"
-    return data
-
-
-def filter_shorttext_AutomaticControl(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("ventil", case=False),
-        "filtered_shorttext",
-    ] = "Ventiler"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("styring", case=False),
-        "filtered_shorttext",
-    ] = "Styring"
-    # Termorude
-    data.loc[
-        data["filtered_shorttext"].str.contains("ude", case=False),
-        "filtered_shorttext",
-    ] = "Udekompensering/føling"
-    Search_for_These_values = [
-        "ventil",
-        "styring",
-        "ude",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "AuC Andet"
-    return data
-
-
-def filter_shorttext_LinearThermalTransmittance(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("kælder", case=False),
-        "filtered_shorttext",
-    ] = "Kælder"
-    Search_for_These_values = [
-        "kælder",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "LTT Andet"
-    return data
-
-
-def filter_shorttext_SolarHeatingPlant(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("sol", case=False),
-        "filtered_shorttext",
-    ] = "Solvarme"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("varme", case=False),
-        "filtered_shorttext",
-    ] = "Solvarme"
-    Search_for_These_values = [
-        "sol",
-        "varme",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "SHP Andet"
-    return data
-
-
-def filter_shorttext_SolarCell(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("sol", case=False),
-        "filtered_shorttext",
-    ] = "Solceller"
-    Search_for_These_values = [
-        "sol",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "SC Andet"
-    return data
-
-
-def filter_shorttext_HeatPump(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("luft/luft", case=False),
-        "filtered_shorttext",
-    ] = "Luft/luft varmepumpe"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("luft til luft", case=False),
-        "filtered_shorttext",
-    ] = "Luft/luft varmepumpe"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("luft-luft", case=False),
-        "filtered_shorttext",
-    ] = "Luft/luft varmepumpe"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("luft/vand", case=False),
-        "filtered_shorttext",
-    ] = "Luft/vand varmepumpe"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("væske/vand", case=False),
-        "filtered_shorttext",
-    ] = "Væske/vand varmepumpe"
-    Search_for_These_values = [
-        "luft/luft",
-        "luft til luft",
-        "luft-luft",
-        "luft/vand",
-        "væske/vand",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HP Andet"
-    return data
-
-
-def filter_shorttext_HotWaterTank(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("sol", case=False),
-        "filtered_shorttext",
-    ] = "Solvarme"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("varmtvand", case=False),
-        "filtered_shorttext",
-    ] = "Varmtvandsbeholder"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("vvb", case=False),
-        "filtered_shorttext",
-    ] = "Varmtvandsbeholder"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("rør", case=False),
-        "filtered_shorttext",
-    ] = "Rør isolering"
-    Search_for_These_values = [
-        "sol",
-        "varmtvand",
-        "vvb",
-        "rør",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HWT Andet"
-    return data
-
-
-def filter_shorttext_Boiler(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("kedel", case=False),
-        "filtered_shorttext",
-    ] = "Kedel"
-    Search_for_These_values = [
-        "kedel",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "Kedel Andet"
-    return data
-
-
-def filter_shorttext_HotWaterConsumption(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("sol", case=False),
-        "filtered_shorttext",
-    ] = "Solvarme"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("rør", case=False),
-        "filtered_shorttext",
-    ] = "Rør isolering"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("pumpe", case=False),
-        "filtered_shorttext",
-    ] = "Pumpe"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("ventil", case=False),
-        "filtered_shorttext",
-    ] = "Ventil"
-    Search_for_These_values = [
-        "sol",
-        "rør",
-        "pumpe",
-        "ventil",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HWC Andet"
-    return data
-
-
-def filter_shorttext_HeatDistributionSystem(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("fordeling", case=False),
-        "filtered_shorttext",
-    ] = "Fordelingssystem"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("streng", case=False),
-        "filtered_shorttext",
-    ] = "Fler-strengssystem"
-    Search_for_These_values = [
-        "fordeling",
-        "streng",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HDS Andet"
-    return data
-
-
-def filter_shorttext_HotWaterCirculationPump(data):
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("pumpe", case=False),
-        "filtered_shorttext",
-    ] = "Pumpe til brugsvandanlæg"
-    # Energirude
-    data.loc[
-        data["filtered_shorttext"].str.contains("styring", case=False),
-        "filtered_shorttext",
-    ] = "styring"
-    Search_for_These_values = [
-        "pumpe",
-        "styring",
-    ]
-    pattern = "|".join(Search_for_These_values)
-    data.loc[
-        ~data["filtered_shorttext"].str.contains(pattern, case=False),
-        "filtered_shorttext",
-    ] = "HWCP Andet"
-    return data
-
-
 def filter(proposals):
+    def filter_shorttext_window(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("energi", case=False),
+            "filtered_shorttext",
+        ] = "Energirude udskiftning"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("termorude", case=False),
+            "filtered_shorttext",
+        ] = "Termorude udskiftning"
+        # Forsatsrude
+        data.loc[
+            data["filtered_shorttext"].str.contains("forsatsrude", case=False),
+            "filtered_shorttext",
+        ] = "Forsatsrude"
+        # Yderdør
+        data.loc[
+            data["filtered_shorttext"].str.contains("yderdør", case=False),
+            "filtered_shorttext",
+        ] = "Yderdør"
+        # terasse
+        data.loc[
+            data["filtered_shorttext"].str.contains("terrasse", case=False),
+            "filtered_shorttext",
+        ] = "Terrasse"
+        # Kælder
+        data.loc[
+            data["filtered_shorttext"].str.contains("kælder", case=False),
+            "filtered_shorttext",
+        ] = "Kælder"
+        # Vinduer andet
+        data.loc[
+            data["filtered_shorttext"].str.contains("vindue", case=False),
+            "filtered_shorttext",
+        ] = "andet"
+        # Dør andet
+        data.loc[
+            data["filtered_shorttext"].str.contains("dør", case=False),
+            "filtered_shorttext",
+        ] = "Vin og dør andet"
+        Search_for_These_values = [
+            "energi",
+            "termorude",
+            "forsatsrude",
+            "yderdør",
+            "terrasse",
+            "kælder",
+            "vindue",
+            "dør",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "Vindue Andet generelt"
+        return data
+
+    def filter_shorttext_buildingpart(data):
+        # Hanebånd
+        data.loc[
+            data["filtered_shorttext"].str.contains("hanebånd", case=False),
+            "filtered_shorttext",
+        ] = "Hanebånd efteris-olering"
+        # Skråvæg
+        data.loc[
+            data["filtered_shorttext"].str.contains("skrå", case=False),
+            "filtered_shorttext",
+        ] = "skråvæg efteris-olering"
+        # Ydervæg
+        data.loc[
+            data["filtered_shorttext"].str.contains("ydervæg", case=False),
+            "filtered_shorttext",
+        ] = "ydervæg efteris-olering"
+        # skunk
+        data.loc[
+            data["filtered_shorttext"].str.contains("skunk", case=False),
+            "filtered_shorttext",
+        ] = "skunk efteris-olering"
+        # kvist
+        data.loc[
+            data["filtered_shorttext"].str.contains("kvist", case=False),
+            "filtered_shorttext",
+        ] = "kvist efteris-olering"
+        # Gulv
+        data.loc[
+            data["filtered_shorttext"].str.contains("gulv", case=False),
+            "filtered_shorttext",
+        ] = "gulv"
+        # Loft
+        data.loc[
+            data["filtered_shorttext"].str.contains("loft", case=False),
+            "filtered_shorttext",
+        ] = "loft/tag efteris-olering"
+        # Tag
+        data.loc[
+            data["filtered_shorttext"].str.contains("tag", case=False),
+            "filtered_shorttext",
+        ] = "loft/tag efteris-olering"
+        # Hulmur
+        data.loc[
+            data["filtered_shorttext"].str.contains("Hulmur", case=False),
+            "filtered_shorttext",
+        ] = "Hulmur is-olering"
+        # Hanebånd
+        data.loc[
+            data["filtered_shorttext"].str.contains("etageadskil", case=False),
+            "filtered_shorttext",
+        ] = "etageadskillelse is-olering"
+        # Hanebånd
+        data.loc[
+            data["filtered_shorttext"].str.contains("kælder", case=False),
+            "filtered_shorttext",
+        ] = "kælder is-olering"
+        # Tag
+        data.loc[
+            data["filtered_shorttext"].str.contains("ræn", case=False),
+            "filtered_shorttext",
+        ] = "terrændæk efteris-olering"
+        # Tag
+        data.loc[
+            data["filtered_shorttext"].str.contains("dør", case=False),
+            "filtered_shorttext",
+        ] = "døre"
+        # Tag
+        data.loc[
+            data["filtered_shorttext"].str.contains("vindue", case=False),
+            "filtered_shorttext",
+        ] = "vindue"
+        # Tag
+        data.loc[
+            data["filtered_shorttext"].str.contains("rude", case=False),
+            "filtered_shorttext",
+        ] = "vindue"
+        # Andet iso
+        data.loc[
+            data["filtered_shorttext"].str.contains("iso", case=False),
+            "filtered_shorttext",
+        ] = "Andet isolering"
+        Search_for_These_values = [
+            "hanebånd",
+            "skrå",
+            "ydervæg",
+            "skunk",
+            "kvist",
+            "gulv",
+            "loft",
+            "tag",
+            "hulmur",
+            "etageadskil",
+            "kælder",
+            "ræn",
+            "dør",
+            "vindue",
+            "rude",
+            "iso",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "Build andet"
+        return data
+
+    def filter_shorttext_ColdWater(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("toilet", case=False),
+            "filtered_shorttext",
+        ] = "Toilet"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("WC", case=False),
+            "filtered_shorttext",
+        ] = "Toilet"
+        # Forsatsrude
+        data.loc[
+            data["filtered_shorttext"].str.contains("brus", case=False),
+            "filtered_shorttext",
+        ] = "bruser"
+        # Yderdør
+        data.loc[
+            data["filtered_shorttext"].str.contains("vask", case=False),
+            "filtered_shorttext",
+        ] = "Håndvask"
+        # terasse
+        data.loc[
+            data["filtered_shorttext"].str.contains("blanding", case=False),
+            "filtered_shorttext",
+        ] = "Blandingsbatteri"
+        Search_for_These_values = [
+            "toilet",
+            "WC",
+            "brus",
+            "vask",
+            "blanding",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "CW Andet"
+        return data
+
+    def filter_shorttext_HeatDistributionPump(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("pumpe", case=False),
+            "filtered_shorttext",
+        ] = "Pumpe"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("Varme", case=False),
+            "filtered_shorttext",
+        ] = "Varme"
+        # Forsatsrude
+        data.loc[
+            data["filtered_shorttext"].str.contains("gas", case=False),
+            "filtered_shorttext",
+        ] = "Gas"
+        # Yderdør
+        data.loc[
+            data["filtered_shorttext"].str.contains("vand", case=False),
+            "filtered_shorttext",
+        ] = "vand"
+        Search_for_These_values = [
+            "pumpe",
+            "Varme",
+            "gas",
+            "vand",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HDP Andet"
+        return data
+
+    def filter_shorttext_HeatDistributionPipe(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("rør", case=False),
+            "filtered_shorttext",
+        ] = "Rør isolering"
+        Search_for_These_values = [
+            "rør",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HDpipe Andet"
+        return data
+
+    def filter_shorttext_HotWaterPipe(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("rør", case=False),
+            "filtered_shorttext",
+        ] = "Rør"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("solvarme", case=False),
+            "filtered_shorttext",
+        ] = "Solvarme"
+        Search_for_These_values = [
+            "rør",
+            "solvarme",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HWP Andet"
+        return data
+
+    def filter_shorttext_AutomaticControl(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("ventil", case=False),
+            "filtered_shorttext",
+        ] = "Ventiler"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("styring", case=False),
+            "filtered_shorttext",
+        ] = "Styring"
+        # Termorude
+        data.loc[
+            data["filtered_shorttext"].str.contains("ude", case=False),
+            "filtered_shorttext",
+        ] = "Udekompensering/føling"
+        Search_for_These_values = [
+            "ventil",
+            "styring",
+            "ude",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "AuC Andet"
+        return data
+
+    def filter_shorttext_LinearThermalTransmittance(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("kælder", case=False),
+            "filtered_shorttext",
+        ] = "Kælder"
+        Search_for_These_values = [
+            "kælder",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "LTT Andet"
+        return data
+
+    def filter_shorttext_SolarHeatingPlant(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("sol", case=False),
+            "filtered_shorttext",
+        ] = "Solvarme"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("varme", case=False),
+            "filtered_shorttext",
+        ] = "Solvarme"
+        Search_for_These_values = [
+            "sol",
+            "varme",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "SHP Andet"
+        return data
+
+    def filter_shorttext_SolarCell(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("sol", case=False),
+            "filtered_shorttext",
+        ] = "Solceller"
+        Search_for_These_values = [
+            "sol",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "SC Andet"
+        return data
+
+    def filter_shorttext_HeatPump(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("luft/luft", case=False),
+            "filtered_shorttext",
+        ] = "Luft/luft varmepumpe"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("luft til luft", case=False),
+            "filtered_shorttext",
+        ] = "Luft/luft varmepumpe"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("luft-luft", case=False),
+            "filtered_shorttext",
+        ] = "Luft/luft varmepumpe"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("luft/vand", case=False),
+            "filtered_shorttext",
+        ] = "Luft/vand varmepumpe"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("væske/vand", case=False),
+            "filtered_shorttext",
+        ] = "Væske/vand varmepumpe"
+        Search_for_These_values = [
+            "luft/luft",
+            "luft til luft",
+            "luft-luft",
+            "luft/vand",
+            "væske/vand",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HP Andet"
+        return data
+
+    def filter_shorttext_HotWaterTank(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("sol", case=False),
+            "filtered_shorttext",
+        ] = "Solvarme"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("varmtvand", case=False),
+            "filtered_shorttext",
+        ] = "Varmtvandsbeholder"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("vvb", case=False),
+            "filtered_shorttext",
+        ] = "Varmtvandsbeholder"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("rør", case=False),
+            "filtered_shorttext",
+        ] = "Rør isolering"
+        Search_for_These_values = [
+            "sol",
+            "varmtvand",
+            "vvb",
+            "rør",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HWT Andet"
+        return data
+
+    def filter_shorttext_Boiler(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("kedel", case=False),
+            "filtered_shorttext",
+        ] = "Kedel"
+        Search_for_These_values = [
+            "kedel",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "Kedel Andet"
+        return data
+
+    def filter_shorttext_HotWaterConsumption(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("sol", case=False),
+            "filtered_shorttext",
+        ] = "Solvarme"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("rør", case=False),
+            "filtered_shorttext",
+        ] = "Rør isolering"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("pumpe", case=False),
+            "filtered_shorttext",
+        ] = "Pumpe"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("ventil", case=False),
+            "filtered_shorttext",
+        ] = "Ventil"
+        Search_for_These_values = [
+            "sol",
+            "rør",
+            "pumpe",
+            "ventil",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HWC Andet"
+        return data
+
+    def filter_shorttext_HeatDistributionSystem(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("fordeling", case=False),
+            "filtered_shorttext",
+        ] = "Fordelingssystem"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("streng", case=False),
+            "filtered_shorttext",
+        ] = "Fler-strengssystem"
+        Search_for_These_values = [
+            "fordeling",
+            "streng",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HDS Andet"
+        return data
+
+    def filter_shorttext_HotWaterCirculationPump(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("pumpe", case=False),
+            "filtered_shorttext",
+        ] = "Pumpe til brugsvandanlæg"
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("styring", case=False),
+            "filtered_shorttext",
+        ] = "styring"
+        Search_for_These_values = [
+            "pumpe",
+            "styring",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "HWCP Andet"
+        return data
+
+    def filter_shorttext_SecondaryElectricHeat(data):
+        Search_for_These_values = [
+            "kedel",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "SEH Andet"
+        return data
+
+    def filter_shorttext_DistrictHeatWithExchanger(data):
+        Search_for_These_values = [
+            "kedel",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "DHWE Andet"
+        return data
+
+    def filter_shorttext_Ventilation(data):
+        # Energirude
+        data.loc[
+            data["filtered_shorttext"].str.contains("dør", case=False),
+            "filtered_shorttext",
+        ] = "Dør"
+        Search_for_These_values = [
+            "kedel",
+        ]
+        pattern = "|".join(Search_for_These_values)
+        data.loc[
+            ~data["filtered_shorttext"].str.contains(pattern, case=False),
+            "filtered_shorttext",
+        ] = "Ventilation Andet"
+        return data
+
     proposals[proposals["data_input_type"] == "Window"] = filter_shorttext_window(
         proposals[proposals["data_input_type"] == "Window"]
     )
@@ -990,35 +1287,52 @@ def filter(proposals):
     ] = filter_shorttext_HotWaterCirculationPump(
         proposals[proposals["data_input_type"] == "HotWaterCirculationPump"]
     )
+    proposals[
+        proposals["data_input_type"] == "SecondaryElectricHeat"
+    ] = filter_shorttext_SecondaryElectricHeat(
+        proposals[proposals["data_input_type"] == "SecondaryElectricHeat"]
+    )
+    proposals[
+        proposals["data_input_type"] == "DistrictHeatWithExchanger"
+    ] = filter_shorttext_DistrictHeatWithExchanger(
+        proposals[proposals["data_input_type"] == "DistrictHeatWithExchanger"]
+    )
+    proposals[
+        proposals["data_input_type"] == "Ventilation"
+    ] = filter_shorttext_Ventilation(
+        proposals[proposals["data_input_type"] == "Ventilation"]
+    )
+
+    proposals["filtered_shorttext"].str.replace("-", "", regex=True)
 
     return proposals
 
 
 proposals = filter(proposals)
 
-kategori = proposals  # [proposals["data_input_type"] == "HotWaterCirculationPump"]
+kategori = proposals  # [proposals["data_input_type"] == "SecondaryElectricHeat"]
 
 col3_2.table(kategori["filtered_shorttext"].unique())
 col3_1.write(kategori[0:1000])
+# col3_1.write(kategori[kategori["filtered_shorttext"] == "Ventilation"])
 
-
-col4_1, col4_2 = st.columns(2)
 
 fig, ax = plt.subplots(figsize=(9, 4))
-ax = sns.countplot(x="filtered_shorttext", hue="municipality", data=kategori)
+ax = sns.countplot(x="Seeb_beskrivelse", hue="municipality", data=kategori)
 ax.tick_params(labelrotation=90)
-col4_1.pyplot(fig)
+col3_1.pyplot(fig)
+
+
 
 # fig, ax = plt.subplots(figsize=(9, 4))
 # ax = sns.countplot(x="shorttext", hue="municipality", data=kategori)
 # ax.tick_params(labelrotation=90)
 # col4_2.pyplot(fig)
 
-fig, ax = plt.subplots(figsize=(20, 4))
-ax = sns.countplot(x="filtered_shorttext", hue="municipality", data=kategori)
-ax.tick_params(labelrotation=90)
-st.pyplot(fig)
-
+# fig, ax = plt.subplots(figsize=(20, 4))
+# ax = sns.countplot(x="filtered_shorttext", hue="municipality", data=kategori)
+# ax.tick_params(labelrotation=90)
+# st.pyplot(fig)
 print("All done")
 print("--- Script finished in %s seconds ---" % (time.time() - start_time))
 st.sidebar.write("--- Script finished in %.4s seconds ---" % (time.time() - start_time))
