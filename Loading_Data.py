@@ -28,15 +28,33 @@ cnxn = pyodbc.connect(
     + ";PWD="
     + PASSWORD
 )
-sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.input_data;"
-cursor = cnxn.cursor()
-print(cursor.execute(sql).fetchall())
+#sql = "SELECT  * FROM energylabels.building_data;"
+#cursor = cnxn.cursor()
+#print(cursor.execute(sql).fetchone())
 
 print("Connected to Redshift")
 
 # %%
+table_list = ['building_data',	'creation_data', 'input_data', 'proposals', 'proposal_groups', 'proposal_group_references',	'result_data_energylabels',
+               'results_fuelsavings', 'results_profitability']
+cursor = cnxn.cursor()
+columns_total = []
+for i in table_list:
+    cursor.execute("""SELECT top 1 * FROM energylabels.{}""".format(i))
+    columns = [column[0] for column in cursor.description]
+    columns_total = columns_total + columns
+table_list
+columns_total
 
-show_tables = cursor.tables()
+municipality = 101
+bygningstyper = 'Municipality'
+
+
+
+# %%
+
+show_tables = cursor.columns()
+print(show_tables)
 for row in show_tables:
     print(row)
 
@@ -72,12 +90,21 @@ print("--- Results %s seconds ---" % (time.time() - start_time))
 
 # %%
 
-print(df_build.dtypes)-.
+#print(df_build.dtypes)-.
+df_creation.dtypes
 df_creation.columns
+
 df_input.columns
 df_build.columns
 df_prop.columns
 df_result.columns
+
+
+df_creation.dtypes
+df_input.dtypes
+df_build.dtypes
+df_prop.dtypes
+df_result.dtypes
 
 
 # %%
@@ -260,3 +287,37 @@ buildings1.head(1000)
 # %%
 st.title("Completely new app")
 municipalities = st.multiselect("Multiselect", df_build["municipality"])
+
+# %%
+
+df_prop = pd.read_sql(
+    """select  * from energylabels.proposals where energylabel_id IN (311418890) """,
+    cnxn,
+)
+
+proposal_group_references = pd.read_sql(
+    """select * from energylabels.proposal_group_references where energylabel_id IN (311418890)""",
+    cnxn,
+)
+
+proposal_groups = pd.read_sql(
+    """select  * from energylabels.proposal_groups where energylabel_id IN (311418890)""",
+    cnxn,
+)
+
+results_fuelsavings = pd.read_sql(
+    """select  * from energylabels.results_fuelsavings where energylabel_id IN (311418890)  """,
+    cnxn,
+)
+
+results_profitability = pd.read_sql(
+    """select * from energylabels.results_profitability where energylabel_id IN (311418890)""",
+    cnxn,
+)
+
+# %%
+df_prop.columns
+proposal_group_references
+proposal_groups.columns
+results_fuelsavings.head()
+results_profitability.head()

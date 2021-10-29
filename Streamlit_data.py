@@ -7,6 +7,12 @@ import seaborn as sns
 import streamlit as st
 from tqdm import tqdm
 import time
+import plotly.express as px
+import plotly.io as pio
+from io import BytesIO
+from pyxlsb import open_workbook as open_xlsb
+
+pio.templates.default = "plotly_white"
 
 # Custom imports
 #from eksterne_funktioner import
@@ -28,6 +34,7 @@ sns.set_theme(
 # pd.options.display.float_format = '{:,.2f}'.format
 # st.markdown("<style>body{background-color: Green;}</style>", unsafe_allow_html=True)
 
+st.title("Filtrering af energimærkeforslag")
 
 start_time = time.time()
 st.sidebar.image("andel_logo_white_rgb.png")
@@ -181,7 +188,7 @@ df_creation, df_build, df_prop, data_time = hent_data(cnxn, BBR_list, ener_list)
 # %% Data cleaning ################################################################################################################################
 
 
-@st.cache
+@st.experimental_memo
 def data_cleaning_df_build(df):
     df.columns = df.columns.str.replace(" ", "_")
     df["municipality"] = df["municipalitynumber"]
@@ -290,15 +297,15 @@ def data_cleaning_df_build(df):
             "120": "120 - Fritliggende enfamiliehus",
             "121": "121 - Sammenbygget enfamiliehus",
             "122": "122 - Fritliggende enfamiliehus i tæt-lav bebyggelse",
-            "130": "130 - (UDFASES) Række-, kæde-, eller dobbelthus (lodret adskillelse mellem enhederne)",
+            "130": "130 - (UDFASES) Række-, kæde-, eller dobbelthus",
             "131": "131 - Række-, kæde- og klyngehus",
             "132": "132 - Dobbelthus",
             "140": "140 - Etagebolig-bygning, flerfamiliehus eller to-familiehus",
             "150": "150 - Kollegium",
             "160": "160 - Boligbygning til døgninstitution",
             "185": "185 - Anneks i tilknytning til helårsbolig",
-            "190": "190 - Anden bygning til helårsbeboelse",
-            "210": "210 - (UDFASES) Bygning til erhvervsmæssig produktion vedrørende landbrug, gartneri, råstofudvinding o. lign",
+            "190": "190 - Anden helårsbeboelse",
+            "210": "210 - (UDFASES) Erhvervsmæssig produktion vedrørende landbrug, gartneri, råstofudvinding o. lign",
             "211": "211 - Stald til svin",
             "212": "212 - Stald til kvæg, får mv.",
             "213": "213 - Stald til fjerkræ",
@@ -308,79 +315,79 @@ def data_cleaning_df_build(df):
             "217": "217 - Maskinhus, garage mv.",
             "218": "218 - Lade til halm, hø mv.",
             "219": "219 - Anden bygning til landbrug mv.",
-            "220": "220 - (UDFASES) Bygning til erhvervsmæssig produktion vedrørende industri, håndværk m.v. (fabrik, værksted o.lign.)",
-            "221": "221 - Bygning til industri med integreret produktionsapparat",
-            "222": "222 - Bygning til industri uden integreret produktionsapparat",
+            "220": "220 - (UDFASES) Erhvervsmæssig produktion vedrørende industri, håndværk m.v.",
+            "221": "221 - Industri med integreret produktionsapparat",
+            "222": "222 - Industri uden integreret produktionsapparat ",
             "223": "223 - Værksted",
-            "229": "229 - Anden bygning til produktion",
+            "229": "229 - Anden til produktion",
             "230": "230 - (UDFASES) El-, gas-, vand- eller varmeværk, forbrændingsanstalt m.v.",
-            "231": "231 - Bygning til energiproduktion",
-            "232": "232 - Bygning til forsyning- og energidistribution",
-            "233": "233 - Bygning til vandforsyning",
-            "234": "234 - Bygning til håndtering af affald og spildevand",
-            "239": "239 - Anden bygning til energiproduktion og -distribution",
-            "290": "290 - (UDFASES) Anden bygning til landbrug, industri etc.",
-            "310": "310 - (UDFASES) Transport- og garageanlæg (fragtmandshal, lufthavnsbygning, banegårdsbygning, parkeringshus). Garage med plads til et eller to køretøjer registreres med anvendelseskode 910",
-            "311": "311 - Bygning til jernbane- og busdrift",
-            "312": "312 - Bygning til luftfart",
-            "313": "313 - Bygning til parkering- og transportanlæg",
-            "314": "314 - Bygning til parkering af flere end to køretøjer i tilknytning til boliger",
+            "231": "231 - Energiproduktion",
+            "232": "232 - Forsyning- og energidistribution",
+            "233": "233 - Vandforsyning",
+            "234": "234 - Til håndtering af affald og spildevand",
+            "239": "239 - Anden til energiproduktion og -distribution",
+            "290": "290 - (UDFASES) Anden til landbrug, industri etc.",
+            "310": "310 - (UDFASES) Transport- og garageanlæg",
+            "311": "311 - Jernbane- og busdrift",
+            "312": "312 - Luftfart",
+            "313": "313 - Parkering- og transportanlæg",
+            "314": "314 - Parkering af flere end to køretøjer i tilknytning til boliger",
             "315": "315 - Havneanlæg",
             "319": "319 - Andet transportanlæg",
-            "320": "320 - (UDFASES) Bygning til kontor, handel, lager, herunder offentlig administration",
-            "321": "321 - Bygning til kontor",
-            "322": "322 - Bygning til detailhandel",
-            "323": "323 - Bygning til lager",
+            "320": "320 - (UDFASES) Til kontor, handel, lager, herunder offentlig administration",
+            "321": "321 - Kontor",
+            "322": "322 - Detailhandel",
+            "323": "323 - Lager",
             "324": "324 - Butikscenter",
             "325": "325 - Tankstation",
-            "329": "329 - Anden bygning til kontor, handel og lager",
-            "330": "330 - (UDFASES) Bygning til hotel, restaurant, vaskeri, frisør og anden servicevirksomhed",
+            "329": "329 - Anden til kontor, handel og lager",
+            "330": "330 - (UDFASES) Til hotel, restaurant, vaskeri, frisør og anden servicevirksomhed",
             "331": "331 - Hotel, kro eller konferencecenter med overnatning",
             "332": "332 - Bed & breakfast mv.",
             "333": "333 - Restaurant, café og konferencecenter uden overnatning",
             "334": "334 - Privat servicevirksomhed som frisør, vaskeri, netcafé mv.",
-            "339": "339 - Anden bygning til serviceerhverv",
-            "390": "390 - (UDFASES) Anden bygning til transport, handel etc",
-            "410": "410 - (UDFASES) Bygning til biograf, teater, erhvervsmæssig udstilling, bibliotek, museum, kirke o. lign.",
+            "339": "339 - Anden til serviceerhverv",
+            "390": "390 - (UDFASES) Anden til transport, handel etc",
+            "410": "410 - (UDFASES) Biograf, teater, erhvervsmæssig udstilling, bibliotek, museum, kirke o. lign.",
             "411": "411 - Biograf, teater, koncertsted mv.",
             "412": "412 - Museum",
             "413": "413 - Bibliotek",
-            "414": "414 - Kirke eller anden bygning til trosudøvelse for statsanerkendte trossamfund",
+            "414": "414 - Kirke eller anden til trosudøvelse for statsanerkendte trossamfund",
             "415": "415 - Forsamlingshus",
             "416": "416 - Forlystelsespark",
-            "419": "419 - Anden bygning til kulturelle formål",
-            "420": "420 - (UDFASES) Bygning til undervisning og forskning (skole, gymnasium, forskningslabratorium o.lign.).",
+            "419": "419 - Anden til kulturelle formål",
+            "420": "420 - (UDFASES) Undervisning og forskning (skole, gymnasium, forskningslabratorium o.lign.).",
             "421": "421 - Grundskole",
             "422": "422 - Universitet",
-            "429": "429 - Anden bygning til undervisning og forskning",
-            "430": "430 - (UDFASES) Bygning til hospital, sygehjem, fødeklinik o. lign.",
+            "429": "429 - Anden til undervisning og forskning",
+            "430": "430 - (UDFASES) Hospital, sygehjem, fødeklinik o. lign.",
             "431": "431 - Hospital og sygehus",
             "432": "432 - Hospice, behandlingshjem mv.",
             "433": "433 - Sundhedscenter, lægehus, fødeklinik mv.",
-            "439": "439 - Anden bygning til sundhedsformål",
-            "440": "440 - (UDFASES) Bygning til daginstitution",
+            "439": "439 - Anden til sundhedsformål",
+            "440": "440 - (UDFASES) Daginstitution",
             "441": "441 - Daginstitution",
             "442": "442 - Servicefunktion på døgninstitution",
             "443": "443 - Kaserne",
             "444": "444 - Fængsel, arresthus mv.",
-            "449": "449 - Anden bygning til institutionsformål",
-            "490": "490 - (UDFASES) Bygning til anden institution, herunder kaserne, fængsel o. lign.",
+            "449": "449 - Anden til institutionsformål",
+            "490": "490 - (UDFASES) Anden institution, herunder kaserne, fængsel o. lign.",
             "510": "510 - Sommerhus",
-            "520": "520 - (UDFASES) Bygning til feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
+            "520": "520 - (UDFASES) Feriekoloni, vandrehjem o.lign. bortset fra sommerhus",
             "521": "521 - Feriecenter, center til campingplads mv.",
-            "522": "522 - Bygning med ferielejligheder til erhvervsmæssig udlejning",
-            "523": "523 - Bygning med ferielejligheder til eget brug",
-            "529": "529 - Anden bygning til ferieformål",
-            "530": "530 - (UDFASES) Bygning i forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.)",
+            "522": "522 - Ferielejligheder til erhvervsmæssig udlejning",
+            "523": "523 - Ferielejligheder til eget brug",
+            "529": "529 - Anden til ferieformål",
+            "530": "530 - (UDFASES) I forbindelse med idrætsudøvelse (klubhus, idrætshal, svømmehal o. lign.)",
             "531": "531 - Klubhus i forbindelse med fritid og idræt",
             "532": "532 - Svømmehal",
             "533": "533 - Idrætshal",
             "534": "534 - Tribune i forbindelse med stadion",
-            "535": "535 - Bygning til træning og opstaldning af heste",
-            "539": "539 - Anden bygning til idrætformål",
+            "535": "535 - Til træning og opstaldning af heste",
+            "539": "539 - Anden til idrætformål",
             "540": "540 - Kolonihavehus",
             "585": "585 - Anneks i tilknytning til fritids- og sommerhus",
-            "590": "590 - Anden bygning til fritidsformål",
+            "590": "590 - Anden til fritidsformål",
             "910": "910 - Garage (med plads til et eller to køretøjer)",
             "920": "920 - Carport",
             "930": "930 - Udhus",
@@ -393,8 +400,13 @@ def data_cleaning_df_build(df):
         },
         inplace=True,
     )
-    df["address"] = (
+    df["address_long"] = (
         df[["postalcode", "postalcity", "streetname", "housenumber"]]
+        .astype(str)
+        .agg(" ".join, axis=1)
+    )
+    df["Adresse"] = (
+        df[["streetname", "housenumber"]]
         .astype(str)
         .agg(" ".join, axis=1)
     )
@@ -403,7 +415,7 @@ def data_cleaning_df_build(df):
     return df
 
 
-@st.cache
+@st.experimental_memo
 def data_cleaning_df_prop(df):
     df.columns = df.columns.str.replace(" ", "_")
     df["Seeb_beskrivelse"] = df["seebclassification"]
@@ -481,28 +493,20 @@ df_prop = data_cleaning_df_prop(df_prop)
 
 # %% Sidebar ################################################################################################################################
 
-with st.sidebar.expander("Filtrering af data"):
-    municipalities = st.multiselect(
-        "Vælg dine yndlingskommuner",
-        options=list(np.unique(df_build["municipality"])),
-        default=["København", "Ballerup"],
-    )
 
-    bygningstyper = st.multiselect(
-        "Hvilken type bygninger skal medtages",
-        options=list(np.unique(df_build["ownership"])),
-        default=["Municipality"],
-    )
 
-    brugskode = st.multiselect(
-        "Hvilke brugstyper skal medtages?",
-        options=list(np.unique(df_build["use"])),
-    )
+municipalities = st.sidebar.multiselect(
+    "Vælg dine yndlingskommuner",
+    options=list(np.unique(df_build["municipality"])),
+    default=["København", "Ballerup"],
+)
 
-    Teknik = st.multiselect(
-        "Hvilke teknikområder?",
-        options=list(df_prop["Seeb_beskrivelse"].unique()),
-    )
+bygningstyper = st.sidebar.multiselect(
+    "Hvilken type bygninger skal medtages",
+    options=list(np.unique(df_build["ownership"])),
+    default=["Municipality"],
+)
+
 
 
 # %%
@@ -522,32 +526,218 @@ def bygningstype(bygningstyper, municipalities):
 
 
 energy = bygningstype(bygningstyper, municipalities)
-
+my_bar = st.progress(0)
 
 @st.experimental_memo
 def individuelle_forslag(energy):
     proposals = energy
+    j=0
     for i in tqdm(proposals["energylabel_id"].unique().astype("int64")):
         temp = proposals[proposals["energylabel_id"] == i]
         temp = temp.drop_duplicates(subset="proposal_id")
         proposals = proposals[proposals["energylabel_id"] != i]
         proposals = proposals.append(temp)
+        j += 0.99/len(proposals["energylabel_id"].unique().astype("int64"))
+        my_bar.progress(j)
     return proposals
-
 
 proposals = individuelle_forslag(energy)
 
-st.title("Filtrering af energimærkeforslag")
+brugskode = st.sidebar.multiselect(
+    "Hvilke anvendelser skal medtages?",
+    options=list(np.unique(proposals["use"])),
+)
+adresse = st.sidebar.multiselect(
+    "Hvilke adresser skal medtages?",
+    options=list(np.unique(proposals["Adresse"])),
+)
+
+teknik = st.sidebar.multiselect(
+    "Hvilke teknikområder?",
+    options=list(proposals["Seeb_beskrivelse"].unique()),
+    default=proposals["Seeb_beskrivelse"].unique()
+)
+
+def filtrer_sidebar(df):
+    temp = []
+    if brugskode:
+        temp = df[df['use'].isin(brugskode)]
+    if adresse:
+        temp = temp
+        temp = df[df['Adresse'].isin(adresse)]
+    if teknik:
+        temp = temp
+        temp = df[df['Seeb_beskrivelse'].isin(teknik)]
+    if temp is not None:
+        temp = temp
+        df = temp
+    return df
+
+proposals = filtrer_sidebar(proposals)
+
+
 
 col0_1, col0_2, col0_3, col0_4 = st.columns(4)
-col0_1.subheader("Antal energimærker")
+col0_1.subheader("Antal energimærker i data")
 col0_1.code(df_build["energylabel_id"].nunique())
-col0_2.subheader("Antal energimærker i forslagstabel")
-col0_2.code(df_prop["energylabel_id"].nunique())
+col0_1.subheader("Antal energimærker i forslag")
+col0_1.code(df_prop["energylabel_id"].nunique())
+col0_2.subheader('Antal forslag')
+col0_2.code(proposals.shape[0])
+col0_2.subheader('Antal kategorier')
+col0_2.code(proposals.shape[1])
 col0_3.subheader("Tid for at hente data")
 col0_3.code(data_time)
 col0_4.subheader("Samlet investering i DKK")
 col0_4.code(np.sum(proposals["investment"]))
+
+
+################## OVERBLIK ###################################
+
+with st.expander("Overblik"):
+    container = st.container()
+    colkom_1, colkom_2 = container.columns((3,2))
+    colkom_3, colkom_4 = container.columns((3,2))
+
+colkom_1.header(', '.join(map(str, municipalities)))
+
+fig, ax = plt.subplots(figsize=(9, 6))
+fig = px.histogram(proposals, x="use", color="municipality", barmode='group', title='Fordeling af forslag på anvendelse')
+fig.update_xaxes(tickangle=45)
+fig.update_layout(height=800)
+colkom_1.plotly_chart(fig,  use_container_width=True)
+
+hej = proposals['use'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
+fig = px.pie(hej, values='Antal', names='Værdi', hole=.3, title='Fordeling af forslag på anvendelse (alle valgte kunder)')
+fig.update_traces(textposition='inside')
+fig.update_layout(showlegend=False)
+colkom_2.plotly_chart(fig)
+
+fig, ax = plt.subplots(figsize=(9, 6))
+fig = px.histogram(proposals, x="Seeb_beskrivelse", color="municipality", barmode='group', title='Fordeling af forslag på teknikområde')
+fig.update_xaxes(tickangle=45)
+fig.update_layout(height=600)
+colkom_3.plotly_chart(fig,  use_container_width=True)
+
+hej = proposals['Seeb_beskrivelse'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
+fig1 = px.pie(hej, values='Antal', names='Værdi', hole=.3, title='Fordeling af forslag på teknikområde (alle valgte kunder)')
+fig1.update_traces(textposition='inside')
+fig1.update_layout(showlegend=False)
+colkom_4.plotly_chart(fig1)
+
+############# Investering, besparelse, TBT, levetid ###########################
+
+with st.expander("Investering, besparelse, TBT, levetid"):
+    container = st.container()
+    colinv_1, colinv_2 = container.columns(2)
+    colinv_3, colinv_4 = container.columns((3,2))
+
+fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
+fig_hist = px.histogram(proposals, x='investment', color='municipality', nbins=int(max(proposals['investment'])/5000), range_x=(0,300000), labels={'x':'Investering [kr.]', 'y':'Antal forslag'}, title='Investering under 300.000 kr.')
+fig_hist.update_traces(opacity=0.75)
+colinv_1.plotly_chart(fig_hist)
+
+fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
+fig_hist = px.histogram(proposals, x='investment', color='municipality', nbins=int(max(proposals['investment'])/2500), range_x=(0,50000), labels={'x':'Investering [kr.]', 'y':'Antal forslag'}, title='Investering under 300.000 kr.')
+fig_hist.update_traces(opacity=0.75)
+colinv_2.plotly_chart(fig_hist)
+
+fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
+fig_hist = px.histogram(proposals, x='lifetime', color='municipality', barmode='group', range_x=(0,50), labels={'x':'Investering [kr.]', 'y':'Antal forslag'}, title='Levetid')
+fig_hist.update_traces(opacity=0.75)
+colinv_3.plotly_chart(fig_hist)
+
+hej = proposals['lifetime'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
+fig1 = px.pie(hej, values='Antal', names='Værdi', hole=.3, title='Fordeling af forslag på levetid (alle valgte kunder)')
+fig1.update_layout()
+colinv_4.plotly_chart(fig1)
+
+
+#################### FORSLAG ########################################
+
+with st.expander("Forslag"):
+    container = st.container()
+    colfor_1, colfor_2 = container.columns((3,2))
+    colfor_3, colfor_4 = container.columns((3,2))
+
+hej = proposals['Seeb_beskrivelse'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
+fig, ax = plt.subplots(figsize=(9, 6))
+fig = px.histogram(proposals, x="Seeb_beskrivelse", color="municipality", barmode='group', title='Fordeling af forslag på teknikområde')
+fig.update_xaxes(tickangle=45)
+fig.update_layout(height=600)
+colfor_1.plotly_chart(fig,  use_container_width=True)
+
+colfor_2.header('Antal forslag indenfor hvert teknikområde')
+colfor_2.write(hej)
+
+
+#################### FORSLAG ########################################
+
+with st.expander("Rapport med energiforslag"):
+    container = st.container()
+    coldown_1, coldown_2 = container.columns((3,2))
+    coldown_3, coldown_4 = container.columns((3,2))
+
+coldown_2.header('Vælg data til rapport')
+slider = coldown_2.slider('Hvilken mindste rentabilitet ønsker de?',  0.7, 2.5, 1., 0.1)
+kolonne_valg = coldown_2.multiselect(
+    "Hvilke kolonner?",
+    options=proposals.columns,
+    default=('energylabel_id', 'proposal_id', 'Seeb_beskrivelse', 'investment', 'lifetime', 'Adresse', 'use')
+)
+coldown_2.write(list(kolonne_valg))
+coldown_2.write(proposals.columns)
+
+Forslag = proposals[proposals.columns.intersection(kolonne_valg)]
+Forslag.sort_values(['energylabel_id','proposal_id'])
+
+
+@st.cache
+def convert_df_csv(df):
+    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+    return df.to_csv().encode('utf-8')
+
+@st.cache
+def convert_df_excel(df):
+    output = BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df.to_excel(writer, index=False, sheet_name='Sheet1')
+    workbook = writer.book
+    worksheet = writer.sheets['Sheet1']
+    format1 = workbook.add_format({'num_format': '0.00'})
+    worksheet.set_column('A:A', None, format1)
+    writer.save()
+    processed_data = output.getvalue()
+    return processed_data
+
+csv   = convert_df_csv(proposals)
+excel = convert_df_excel(proposals)
+
+coldown_1.download_button(
+                          label='📥 Download forslag som excel fil',
+                          data=excel,
+                          file_name='Energimærkeforslag.xlsx',
+                          mime='xlsx'
+)
+coldown_1.download_button(
+                          label='📥 Download forslag som CSV fil',
+                          data=csv,
+                          file_name='Energimærkeforslag.csv',
+                          mime='text/csv'
+)
+coldown_1.write('Forslag eksempel')
+coldown_1.write(Forslag.sort_values(['energylabel_id','proposal_id']))
+
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+################################################################################
+with st.expander(" "):
+    container = st.container()
+
 
 with st.expander("Overblik over indhentet data"):
     container = st.container()
@@ -575,13 +765,6 @@ col1_1.write(df_build[0:10000])
 col1_2.write("df_prop")
 col1_2.write(df_prop[0:10000])
 
-fig, ax = plt.subplots(figsize=(9, 6))
-hej = hist_values['usecode'].value_counts().rename_axis('labels').reset_index(name='counts')
-col1_1.write(hej)
-print(hej)
-ax = plt.pie(hej['counts'], labels=hej['labels'], autopct='%1.1f%%', startangle=90, pctdistance=0.85)
-plt.tight_layout()
-container.pyplot(fig)
 
 with st.expander("Investering og levetid visualiseret"):
     container2 = st.container()
@@ -631,10 +814,10 @@ col2_1.pyplot(fig)
 
 option = col2_2.selectbox(
     "Find forslag til forbedringer for en adresse",
-    options=np.unique(proposals["address"]),
+    options=np.unique(proposals["address_long"]),
 )
 col2_2.table(
-    proposals[proposals["address"] == option][
+    proposals[proposals["address_long"] == option][
         ["shorttext", "investment", "lifetime"]
     ].sort_values(by="investment")
 )
