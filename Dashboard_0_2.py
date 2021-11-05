@@ -34,9 +34,18 @@ BBR Kommunenr, BBR Ejendomsnummer
 ..."""
     )
     uploaded_BBR = st.file_uploader("BBR data", type=["txt", "csv"])
+    BBR0 =[]
+    BBR1 =[]
+    BBR_list = []
     if uploaded_BBR is not None:
-        BBR_list = list(np.loadtxt(uploaded_BBR, delimiter=",", dtype="int"))
+        BBR_list = np.loadtxt(uploaded_BBR, delimiter='\t', dtype="int")
         st.code(BBR_list)
+        st.code(BBR_list[:,0])
+        st.code(tuple(BBR_list[:,1]))
+        BBR0 = tuple(BBR_list[:,0])
+        BBR1 = tuple(BBR_list[:,1])
+        print(BBR_list)
+        print(BBR1)
     else:
         BBR_list=[]
 
@@ -81,22 +90,22 @@ def hent_data(BBR_list, ener_list):
     print(cursor.execute(sql).fetchall())
     print("Connected to Redshift")
 
-    if BBR_list:
+    if BBR0:
         print('BBR Data')
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.ownership, build.reviewdate, CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
-                WHERE energylabel_id IN {}
+                WHERE (municipalitynumber IN {}) AND (propertynumber IN {})
                 )
                 SELECT build.energylabel_id,
                 fuel.proposal_group_id, fuel.fuelsaved, fuel.material, fuel.unit,
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
-                prop_group.shorttext, prop_group.seebclassification,
-                build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -108,7 +117,8 @@ def hent_data(BBR_list, ener_list):
                 LEFT JOIN energylabels.proposal_groups AS prop_group ON build.energylabel_id = prop_group.energylabel_id AND fuel.proposal_group_id = prop_group.proposal_group_id
 
                 ORDER BY build.energylabel_id, fuel.proposal_group_id, prof.proposal_group_id
-                """.format(tuple(BBR[:,0]), tuple(BBR[:,1]))
+                """.format(BBR0, BBR1)
+
         n = 10000
         dfs = []
         for chunk in tqdm(pd.read_sql(query, con=cnxn, chunksize=n)):
@@ -121,7 +131,7 @@ def hent_data(BBR_list, ener_list):
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                SELECT energylabel_id, build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
                 WHERE energylabel_id IN {}
@@ -130,8 +140,8 @@ def hent_data(BBR_list, ener_list):
                 fuel.proposal_group_id, fuel.fuelsaved, fuel.material, fuel.unit,
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
-                prop_group.shorttext, prop_group.seebclassification,
-                build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -156,17 +166,18 @@ def hent_data(BBR_list, ener_list):
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.ownership, build.reviewdate,  CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
                 WHERE ownership = 'Municipality'
+
                 )
                 SELECT build.energylabel_id,
                 fuel.proposal_group_id, fuel.fuelsaved, fuel.material, fuel.unit,
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
-                prop_group.shorttext, prop_group.seebclassification,
-                build.propertynumber, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -190,15 +201,54 @@ def hent_data(BBR_list, ener_list):
     return df, data_time  #
 
 df, data_time = hent_data(BBR_list, ener_list)
-df_base = df['energylabel_id']
+df_base = df
 # %% Data cleaning ################################################################################################################################
 
-@st.experimental_memo
+def oversat_kolonnenavne(df):
+    df.rename(columns={
+                       'energylabel_id': 'energimærkeID',
+                       'proposal_group_id': 'forslag_gruppe_ID',
+                       'fuelsaved': 'brændstof',
+                       'material': 'materiale',
+                       'unit': 'enhed',
+                       'energyperunit': 'energi_per_enhed',
+                       'co2perunit': 'co2_per_enhed',
+                       'costperunit': 'besparelse_per_enhed',
+                       'fixedcostperyear': 'faste_årlige_omkostninger',
+                       'original_cost': 'besparelse_DKK',
+                       'profitability': 'rentabilitet',
+                       'investment': 'investering',
+                       'investmentlifetime': 'levetid',
+                       'shorttext': 'overskrift',
+                       'longttext': 'beskrivelse',
+                       'seebclassification': 'tekniknr',
+                       'propertynumber': 'ejendomsnr',
+                       'building_id': 'bygningsnr',
+                       'ownership': 'ejerskab',
+                       'reviewdate': 'besigtigelsesdato',
+                       'municipalitynumber': 'kommunenr',
+                       'streetname': 'vejnavn',
+                       'housenumber': 'husnr',
+                       'postalcode': 'postnr',
+                       'postalcity': 'by',
+                       'usecode': 'brugskode',
+                       'dwellingarea': 'beboelsesareal',
+                       'commercialarea': 'kommercielt_areal',
+                       'status_energylabelclassification': 'klassificering_status',
+                       'resultforallprofitable_energylabelclassification': 'klassificering_rentable',
+                       'resultforallproposals_energylabelclassification': 'klassificering_alle',
+                       'energylabelclassification': 'klassificering',
+                       }, inplace=True)
+    return df
+
+df = oversat_kolonnenavne(df)
+#print(df.columns)
+
+@st.cache
 def data_cleaning(df):
-    df["municipality"] = df["municipalitynumber"]
-    df["municipality"].replace(
-        {
-            "101": "København",
+    df["Kommune"] = df["kommunenr"].astype(str)
+    df["Kommune"].replace(
+        {   "101": "København",
             "147": "Frederiksberg",
             "151": "Ballerup",
             "153": "Brøndby",
@@ -294,8 +344,8 @@ def data_cleaning(df):
         },
         inplace=True,
     )
-    df["use"] = df["usecode"]
-    df["use"].replace(
+    df["Anvendelse"] = df["brugskode"]
+    df["Anvendelse"].replace(
         {
             "110": "110 - Stuehus til landbrugsejendom",
             "120": "120 - Fritliggende enfamiliehus",
@@ -404,13 +454,13 @@ def data_cleaning(df):
         },
         inplace=True,
     )
-    df["address_long"] = df.postalcode + ' ' + df.postalcity + ' ' + df.streetname + ' ' + df.housenumber
-    df["Adresse"] = df.streetname + ' ' + df.housenumber
-    df["dwellingarea"] = pd.to_numeric(df["dwellingarea"])
-    df["commercialarea"] = pd.to_numeric(df["commercialarea"])
-    df['areal'] = df['dwellingarea'] + df["commercialarea"]
-    df["Seeb_beskrivelse"] = df["seebclassification"]
-    df["Seeb_beskrivelse"].replace(
+    df["adresse_lang"] = df.postnr + ' ' + df.by + ' ' + df.vejnavn + ' ' + df.husnr
+    df["Adresse"] = df.vejnavn + ' ' + df.husnr
+    df["beboelsesareal"] = pd.to_numeric(df["beboelsesareal"])
+    df["kommercielt_areal"] = pd.to_numeric(df["kommercielt_areal"])
+    df['areal'] = df['beboelsesareal'] + df["kommercielt_areal"]
+    df["teknikområde"] = df["tekniknr"]
+    df["teknikområde"].replace(
         {
             "1-0-0-0": "Bygningen",
             "1-1-0-0": "Tag og loft",
@@ -475,31 +525,68 @@ def data_cleaning(df):
         },
         inplace=True,
     )
-    df["investment"] = pd.to_numeric(df["investment"])
-    df["investmentlifetime"] = pd.to_numeric(df["investmentlifetime"])
-    df["energylabel_id"] = df["energylabel_id"].astype("int64")
+    df["enhed"].replace({"CubicMeter": "m^3",}, inplace=True,)
+    df["materiale"].replace(
+        {   'DistrictHeat': 'Fjernvarme',
+            'Electricity': 'El',
+            'NaturalGas': 'Naturgas',
+            'FuelOil': 'Olie',
+            'Wood': 'Træ',
+            'CityGas': 'Bygas',
+            'WoodPellets': 'Træpiller',
+            'FuelGasOil': 'Fyringsgasolie',
+            'Briquettes': 'Briketter?',
+        },
+        inplace=True,
+    )
+    df["ejerskab"].replace(
+        {   'OtherMunicipality': 'Anden kommune',
+            'State': 'Staten',
+            'Municipality': 'Iboliggende kommune',
+            'Other': 'Andet',
+            'County': 'Region',
+            'Company': 'Firmaer og selskaber',
+            'Private': 'Privat',
+            'NonProfitHousingAssociation': 'Almennyttig boligselskab',
+            'IndependentInstitution': 'Forening, legat eller selvejende institution',
+            'HousingAssociation': ' Privat andelsboligforening',
+        },
+        inplace=True,
+    )
+    df["investering"] = pd.to_numeric(df["investering"])
+    df["levetid"] = pd.to_numeric(df["levetid"])
+    df["energimærkeId"] = df["energimærkeID"].astype("int64")
+    df["forslag_gruppe_ID"] = pd.to_numeric(df["forslag_gruppe_ID"])
     #df["proposal_group_id"] = df["proposal_group_id"].astype("int64")
     # df["proposal_id"] = pd.to_numeric(df["proposal_id"])
     return df
 
 df = data_cleaning(df)
-print(df.columns)
-print(df.head(10))
-print(df.dtypes)
+#print(df.columns)
+#print(df.head(10))
+#print(df.dtypes)
+
+#st.sidebar.write(df['energimærkeID'].sample(n=10, random_state=42))
 # %% Sidebar ################################################################################################################################
 
 with st.sidebar.expander('Vælg kommune og ejerskab'):
     municipalities = st.multiselect(
         "Vælg dine yndlingskommuner",
-        options=list(np.unique(df["municipality"])),
-        default=["København"],
+        options=list(np.unique(df["Kommune"])),
+        #default=["København"],
     )
     bygningstyper = st.multiselect(
-        "Hvilken type bygninger skal medtages",
-        options=list(np.unique(df["ownership"])),
-        default=["Municipality"],
+        "Hvilken ejerskabsform skal medtages",
+        options=list(np.unique(df["ejerskab"])),
+        #default=["Municipality"],
     )
 
+if not municipalities:
+    st.info('Du skal vælge en kommune')
+    st.stop()
+if not bygningstyper:
+    st.info('Du skal vælge en ejerskabsform')
+    st.stop()
 # %%
 
 
@@ -508,8 +595,8 @@ def bygningstype(bygningstyper, municipalities, df):
     """ Filters if the data is in the municipalities chosen and in the types of buildings chosen.
     Also merges the proposals and building_data tables. """
 
-    df = df[df["municipality"].isin(municipalities)]
-    df = df[df["ownership"].isin(bygningstyper)]
+    df = df[df["Kommune"].isin(municipalities)]
+    df = df[df["ejerskab"].isin(bygningstyper)]
     return df
 
 df = bygningstype(bygningstyper, municipalities, df)
@@ -519,7 +606,7 @@ df = bygningstype(bygningstyper, municipalities, df)
 with st.sidebar.expander('Vælg anvendelse, specifikke adresser eller teknikområde'):
     brugskode = st.multiselect(
         "Hvilke anvendelser skal medtages?",
-        options=list(np.unique(df["use"])),
+        options=list(np.unique(df["Anvendelse"])),
     )
     adresse = st.multiselect(
         "Hvilke adresser skal medtages?",
@@ -527,22 +614,18 @@ with st.sidebar.expander('Vælg anvendelse, specifikke adresser eller teknikomr�
     )
     teknik = st.multiselect(
         "Hvilke teknikområder?",
-        options=list(df["Seeb_beskrivelse"].unique()),
-        default=df["Seeb_beskrivelse"].unique()
+        options=list(df["teknikområde"].unique()),
+        default=df["teknikområde"].unique()
     )
-
-
-elpris = st.sidebar.number_input('Vælg den nuværende elpris', min_value=0.0, max_value=7.0, value=1.01, step=0.01)
-CO2perkwh = st.sidebar.number_input('Hvor meget CO2 sparer man per kWh?', min_value=0.0, max_value=7.0, value=1.01, step=0.01)
 
 def filtrer_sidebar(df):
     temp = df
     if brugskode:
-        temp = df[df['use'].isin(brugskode)]
+        temp = df[df['Anvendelse'].isin(brugskode)]
     if adresse:
         temp = df[df['Adresse'].isin(adresse)]
     if teknik:
-        temp = df[df['Seeb_beskrivelse'].isin(teknik)]
+        temp = df[df['teknikområde'].isin(teknik)]
     if temp is not None:
             df = temp
     return df
@@ -550,83 +633,124 @@ def filtrer_sidebar(df):
 df = filtrer_sidebar(df)
 df_orig = df
 
+with st.sidebar.expander('Justér pris og CO2 på enheder'):
+    st.subheader('El')
+    elpris   = st.number_input('Nuværende elpris [kr/kWh]', min_value=0.0, max_value=5., value=2.08, step=0.01)
+    elCO2    = st.number_input('CO2 per kWh Naturgas [g/kWh]', min_value=0., max_value=500., value=128., step=1.)
+    st.subheader('Naturgas')
+    NGpris   = st.number_input('Nuværende naturgaspris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    NGCO2    = st.number_input('CO2 per kWh naturgas [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Træ')
+    woodpris = st.number_input('Nuværende pris for træ [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    woodCO2  = st.number_input('CO2 per kWh træ [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Bygas')
+    CGpris   = st.number_input('Nuværende bygaspris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    CGCO2    = st.number_input('CO2 per kWh bygas [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Fjernarme')
+    DHpris   = st.number_input('Nuværende fjernvarmepris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    DHCO2    = st.number_input('CO2 per kWh fjernvarme [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Fyringsgasolie')
+    FGOpris  = st.number_input('Nuværende fyringsgasoliepris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    FGOCO2   = st.number_input('CO2 per kWh fyringsgasolie [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Olie')
+    Oliepris = st.number_input('Nuværende oliepris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    OlieCO2  = st.number_input('CO2 per kWh olie [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.subheader('Træpiller')
+    WPpris   = st.number_input('Nuværende træpillepris [kr/kWh]', min_value=0.0, max_value=15., value=9.0, step=0.01)
+    WPCO2    = st.number_input('CO2 per kWh træpiller [g/kWh]', min_value=0., max_value=300., value=204., step=1.)
+    st.write(list(df.columns))
+    st.write(df['ejerskab'].unique())
+    st.write(df['enhed'].unique())
+
+
 @st.experimental_memo
 def fuel_calculations(df):
-    df['original_CO2'] = df['fuelsaved'] * df['co2perunit']
-    df['original_units'] = df['fuelsaved'] * df['energyperunit']
-    df['investmentlifetime_new'] = df['investmentlifetime'].fillna((df['profitability']*df['investment'])/df['original_cost']).round()
-    df['TBT'] = df['investment'] / df['original_cost']
-    df['TBT'] = df['TBT'].round()
-    df.loc[df['profitability'] < 0,'profitability'] =  np.nan
+    df['besparelse_CO2'] = df['brændstof'] * df['co2_per_enhed']
+    df['besparelse_enheder'] = df['brændstof'] * df['energi_per_enhed']
+    #df['Besparelse_DKK'] = df['fuelsaved'] * df['costperunit']
+    df.loc[df['rentabilitet'] < 0,'rentabilitet'] =  np.nan
 
-    df = df.groupby(['energylabel_id', 'proposal_group_id']).agg({
-                                                                                               'fuelsaved': 'first',
-                                                                                               'material': ', '.join,
-                                                                                               'unit': 'first',
-                                                                                               'energyperunit': 'first',
-                                                                                               'co2perunit': 'first',
-                                                                                               'costperunit': 'first',
-                                                                                               'fixedcostperyear': 'first',
-                                                                                               'original_cost': 'first',
-                                                                                               'original_CO2': 'sum',
-                                                                                               'original_units': 'sum',
-                                                                                               'profitability': 'first',
-                                                                                               'investment': 'first',
-                                                                                               'investmentlifetime': 'first',
-                                                                                               'investmentlifetime_new': 'first',
-                                                                                               'TBT': 'first',
-                                                                                               'shorttext': 'first',
-                                                                                               'seebclassification': 'first',
-                                                                                               'Seeb_beskrivelse': 'first',
-                                                                                               'propertynumber': 'first',
-                                                                                               'ownership': 'first',
-                                                                                               'reviewdate': 'first',
-                                                                                               'municipalitynumber': 'first',
-                                                                                               'municipality': 'first',
-                                                                                               'streetname': 'first',
-                                                                                               'housenumber': 'first',
-                                                                                               'postalcode': 'first',
-                                                                                               'postalcity': 'first',
-                                                                                               'usecode': 'first',
-                                                                                               'use': 'first',
-                                                                                               'dwellingarea': 'first',
-                                                                                               'commercialarea': 'first',
-                                                                                               'status_energylabelclassification': 'first',
-                                                                                               'resultforallprofitable_energylabelclassification': 'first',
-                                                                                               'resultforallproposals_energylabelclassification': 'first',
-                                                                                               'energylabelclassification': 'first',
-                                                                                               'address_long': 'first',
-                                                                                               'Adresse': 'first',
+    df = df.groupby(['energimærkeID', 'forslag_gruppe_ID', 'Adresse']).agg({
+                                                                                               'brændstof': 'first',
+                                                                                               'materiale': ', '.join,
+                                                                                               'enhed': ', '.join,
+                                                                                               'energi_per_enhed': 'first',
+                                                                                               'co2_per_enhed': 'first',
+                                                                                               'besparelse_per_enhed': 'first',
+                                                                                               'faste_årlige_omkostninger': 'sum',
+                                                                                               'besparelse_DKK': 'sum',
+                                                                                               'besparelse_CO2': 'sum',
+                                                                                               'besparelse_enheder': 'sum',
+                                                                                               'rentabilitet': 'first',
+                                                                                               'investering': 'first',
+                                                                                               'levetid': 'first',
+                                                                                               'overskrift': 'first',
+                                                                                               'beskrivelse': 'first',
+                                                                                               'tekniknr': 'first',
+                                                                                               'teknikområde': 'first',
+                                                                                               'ejendomsnr': 'first',
+                                                                                               'bygningsnr': 'first',
+                                                                                               'ejerskab': 'first',
+                                                                                               'besigtigelsesdato': 'first',
+                                                                                               'kommunenr': 'first',
+                                                                                               'Kommune': 'first',
+                                                                                               'vejnavn': 'first',
+                                                                                               'husnr': 'first',
+                                                                                               'postnr': 'first',
+                                                                                               'by': 'first',
+                                                                                               'brugskode': 'first',
+                                                                                               'Anvendelse': 'first',
+                                                                                               'beboelsesareal': 'first',
+                                                                                               'kommercielt_areal': 'first',
+                                                                                               'klassificering_status': 'first',
+                                                                                               'klassificering_rentable': 'first',
+                                                                                               'klassificering_alle': 'first',
+                                                                                               'klassificering': 'first',
+                                                                                               'adresse_lang': 'first',
                                                                                                'areal': 'first'
                                                                                                })
     df = df.reset_index()
-    df = df.drop_duplicates(subset=(['energylabel_id', 'proposal_group_id']))
+    df = df.drop_duplicates(subset=(['energimærkeID', 'forslag_gruppe_ID', 'Adresse']))
+    df['levetid_ny'] = df['levetid'].fillna((df['rentabilitet']*df['investering'])/df['besparelse_DKK']).round()
+    df['TBT'] = df['investering'] / df['besparelse_DKK']
+    df['TBT'] = df['TBT']
     return df
+
+
+
 
 df = fuel_calculations(df)
 missing_values_count = df.isnull().sum()
-print('NaNs')
-print(missing_values_count)
+#print('NaNs')
+#print(missing_values_count)
 
 col0_1, col0_2, col0_3, col0_4 = st.columns(4)
-col0_1.metric('Energimærker i al data', df_base.nunique())
-col0_1.metric('Energimærker i valgt data', df_orig['energylabel_id'].nunique(), df_orig['energylabel_id'].nunique()-df["energylabel_id"].nunique())
-col0_1.metric("Energimærker i valgt data med forslag", df["energylabel_id"].nunique(), -(df_orig['energylabel_id'].nunique()-df["energylabel_id"].nunique()))
+col0_1.metric('Energimærker i al data', df_base['energimærkeID'].nunique())
+col0_1.metric('Energimærker i valgt data', df_orig['energimærkeID'].nunique(), df_orig['energimærkeID'].nunique()-df["energimærkeID"].nunique())
+col0_1.metric("Energimærker i valgt data med forslag", df["energimærkeID"].nunique(), -(df_orig['energimærkeID'].nunique()-df["energimærkeID"].nunique()))
 col0_2.metric('Antal forslag i valgt data', df.shape[0])
-col0_2.metric('Elsparepris', '{:.2f} Kr./kWh'.format(df["investment"].sum()/df['original_units'].sum()))
-col0_2.metric('CO2 sparepris', '{:.2f} Kr./kg'.format(df["investment"].sum()/(df['original_CO2'].sum()/1000)))
-col0_3.metric('Samlet årlig økonomisk besparelse', '{:.2f} mio. Kr.'.format(df['original_cost'].sum()/1000000))
-col0_3.metric('Samlet årlig klimamæssig besparelse', '{:.2f} Ton.'.format(df['original_CO2'].sum()/1000000))
-col0_3.metric('Samlet årlig energibesparelse', '{:.2f} mio. kWh.'.format(df['original_units'].sum()/1000000))
+col0_2.metric('Elsparepris', '{:.2f} Kr./kWh'.format(df["investering"].sum()/df['besparelse_enheder'].sum()))
+col0_2.metric('CO2 sparepris', '{:.2f} Kr./kg'.format(df["investering"].sum()/(df['besparelse_CO2'].sum()/1000)))
+col0_3.metric('Samlet årlig økonomisk besparelse', '{:.2f} mio. Kr.'.format(df['besparelse_DKK'].sum()/1000000))
+col0_3.metric('Samlet årlig klimamæssig besparelse', '{:.2f} Ton.'.format(df['besparelse_CO2'].sum()/1000000))
+col0_3.metric('Samlet årlig energibesparelse', '{:.2f} mio. kWh.'.format(df['besparelse_enheder'].sum()/1000000))
 col0_4.metric("Tid for at hente data", '{:.2f} min'.format(data_time/60))
-col0_4.metric("Samlet investering i DKK", '{:.2f} mio. Kr.'.format(np.sum(df["investment"])/1000000))
-col0_4.metric("Middelrentabilitet", '{:.2f}'.format(df['profitability'].mean()))
+col0_4.metric("Samlet investering i DKK", '{:.2f} mio. Kr.'.format(np.sum(df["investering"])/1000000))
+col0_4.metric("Middelrentabilitet", '{:.2f}'.format(df['rentabilitet'].mean()))
+
+with st.expander("Data oversigt"):
+    container = st.container()
+    col_1, col_2 = container.columns(2)
+
+    container.write(df.head(1000))
+    container.write(df_orig.head(1000))
 
 @st.experimental_singleton
 def grid_bar_pie(column, titel, bins, sortering):
     hej = column.value_counts(dropna=True, bins =bins).rename_axis('Name').reset_index(name='Antal')
     #hej['Value'] = hej.Name.astype(str)
     hej = hej.sort_values(by=sortering)
+    print(hej.shape)
     hej2 = [list(z) for z in zip(hej.Name, hej.Antal)]
     #data_pair.sort(key=lambda x: x[1])
     p = (
@@ -760,12 +884,7 @@ def grid_bar_bar(column, titel1, bin1, range1, titel2, bin2, range2, titel):
     return grid
 
 
-with st.expander("Data oversigt"):
-    container = st.container()
-    col_1, col_2 = container.columns(2)
 
-    container.write(df.head(1000))
-    container.write(df_orig.head(1000))
 
 
 
@@ -776,9 +895,9 @@ with st.expander("Overblik"):
 
     container.header(', '.join(map(str, municipalities)))
 
-    grid = grid_bar_pie(df['use'], 'Anvendelse', None, 'Antal')
+    grid = grid_bar_pie(df['Anvendelse'], 'Anvendelse', None, 'Antal')
     st_pyecharts(grid, height='400px')
-    grid = grid_bar_pie(df['Seeb_beskrivelse'], 'Teknikområde', None, 'Antal')
+    grid = grid_bar_pie(df['teknikområde'], 'Teknikområde', None, 'Antal')
     st_pyecharts(grid, height='400px')
 
 
@@ -796,51 +915,30 @@ with st.expander("Investering, besparelse, TBT, levetid"):
     )
 
     if 'Investering' in plots:
-        grid = grid_bar_bar(df['investment'], 'Under 300000', 30, 300000, 'Under 50000', 25, 50000, 'Investering')
+        grid = grid_bar_bar(df['investering'], 'Under 300000', 30, 300000, 'Under 50000', 25, 50000, 'Investering')
         st_pyecharts(grid, height='400px')
 
     if 'Levetid' in plots:
-        df.loc[df['investmentlifetime_new'] == np.inf,'investmentlifetime_new'] = np.nan
-        df.loc[df['investmentlifetime_new'] <= 0,'investmentlifetime_new'] = np.nan
-        df.loc[df['investmentlifetime_new'] >= 75,'investmentlifetime_new'] = np.nan
-        grid = grid_bar_pie(df["investmentlifetime_new"].dropna(), 'Levetid', None, 'Name')
+        df.loc[df['levetid_ny'] == np.inf,'levetid_ny'] = np.nan
+        df.loc[df['levetid_ny'] <= 0,'levetid_ny'] = np.nan
+        df.loc[df['levetid_ny'] >= 100,'levetid_ny'] = np.nan
+        grid = grid_bar_pie(df["levetid_ny"].dropna(), 'Levetid', None, 'Name')
         st_pyecharts(grid, height='400px')
 
     if 'Rentabilitet' in plots:
-        grid = grid_bar_bar(df['profitability'], 'Op til 15', 30, 15, 'Op til 3', 30, 3, 'Rentabilitet')
+        grid = grid_bar_bar(df['rentabilitet'], 'Op til 15', 30, 15, 'Op til 3', 30, 3, 'Rentabilitet')
         st_pyecharts(grid, height='400px')
-
-        # fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
-        # bin_width= 0.2
-        # nbins = math.ceil((df["profitability"].max() - df["profitability"].min()) / bin_width)
-        # fig_hist = px.histogram(df, x='profitability', color='use', nbins=nbins, range_x=(0,10), labels={'x':'Rentabilitet', 'y':'Antal forslag'}, title='Rentabilitet for alle forslag')
-        # fig_hist.add_vline(x=1, line_dash = 'solid', line_color = 'red')
-        # fig_hist.update_traces(opacity=1)
-        # st.plotly_chart(fig_hist,use_container_width=True)
 
     if 'Besparelse kroner' in plots:
-        grid = grid_bar_bar(df['original_cost'], 'Op til 100000', 100, 100000, 'Op til 5000', 50, 5000, 'Økonomisk besparelse')
+        grid = grid_bar_bar(df['besparelse_DKK'], 'Op til 100000', 100, 100000, 'Op til 5000', 50, 5000, 'Økonomisk besparelse')
         st_pyecharts(grid, height='400px')
 
-        # fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
-        # bin_width= 2000
-        # nbins = math.ceil((df["original_cost"].max() - df["original_cost"].min()) / bin_width)
-        # fig_hist = px.histogram(df, x='original_cost', color='use', nbins=nbins, range_x=(0,100000), labels={'x':'Årlig besparelse [kr.]', 'y':'Antal forslag'}, title='Årlig besparelse kroner')
-        # fig_hist.update_traces(opacity=1)
-        # st.plotly_chart(fig_hist, use_container_width=True)
 
     if 'Besparelse CO2' in plots:
         CO2_1 = st.slider('Figur 1 op til hvor mange kg CO2? (stepsize 100)',  0., 100000., 10000., 100.)
         CO2_2 = st.slider('Figur 2 op til hvor mange kg CO2? (stepsize 1)',  0., 100., 10., 1.)
-        grid = grid_bar_bar(df['original_CO2']/1000, 'Op til {} kg CO2'.format(CO2_1), 100, CO2_1, 'Op til {} kg CO2'.format(CO2_2), 100, CO2_2, 'Klimamæssig/CO2 besparelse')
+        grid = grid_bar_bar(df['besparelse_CO2']/1000, 'Op til {} kg CO2'.format(CO2_1), 100, CO2_1, 'Op til {} kg CO2'.format(CO2_2), 100, CO2_2, 'Klimamæssig/CO2 besparelse')
         st_pyecharts(grid, height='400px')
-
-        # fig_hist, ax_hist = plt.subplots(figsize=(9, 4))
-        # bin_width= 100000
-        # nbins = math.ceil((df["original_CO2"].max() - df["original_CO2"].min()) / bin_width)
-        # fig_hist = px.histogram(df, x='original_CO2', color='use', nbins=nbins, range_x=(0,10000000), labels={'x':'Årlig besparelse [kr.]', 'y':'Antal forslag'}, title='Årlig besparelse CO2')
-        # fig_hist.update_traces(opacity=1)
-        # st.plotly_chart(fig_hist, use_container_width=True)
 
     if 'Tilbagebetalingstid (TBT)' in plots:
         df.loc[df['TBT'] == np.inf,'TBT'] = np.nan
@@ -907,9 +1005,9 @@ with st.expander("Forslag"):
     colfor_1, colfor_2 = container.columns((4,2))
     colfor_3, colfor_4 = container.columns((3,2))
 
-hej = df['Seeb_beskrivelse'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
+hej = df['teknikområde'].value_counts().rename_axis('Værdi').reset_index(name='Antal')
 fig, ax = plt.subplots(figsize=(9, 6))
-fig = px.histogram(df, x="Seeb_beskrivelse", color="municipality", barmode='group', title='Fordeling af forslag på teknikområde')
+fig = px.histogram(df, x="teknikområde", color="Kommune", barmode='group', title='Fordeling af forslag på teknikområde')
 fig.update_xaxes(tickangle=90)
 fig.update_layout(height=600)
 colfor_1.plotly_chart(fig,  use_container_width=True)
@@ -918,20 +1016,20 @@ colfor_2.header('Antal forslag indenfor hvert teknikområde')
 colfor_2.write(hej)
 
 colfor_4.header('Vælg data til rapport')
-renta = colfor_4.slider('Hvilken mindste rentabilitet ønsker de?',  0.7, 2.5, 1., 0.1)
+renta = colfor_4.slider('Hvilken mindste rentabilitet ønsker de?',  0.0, 2.5, 1., 0.1)
 invest = colfor_4.slider('Hvad må højeste enkelt investering være?',  0, 10000000, 4000000, 10000)
 slider = colfor_4.slider('Hvilken mindste rentabilitet ønsker de dem?',  0.7, 2.55, 1.5, 0.1)
 bespar = colfor_4.slider('Hvilken mindste enkelt besparelse i kr. ønsker de?',  0, 100000, 0, 1000)
 
 
 def slider_filter(df):
-    df = df.loc[df['investment'] <= invest]
+    df = df.loc[df['investering'] <= invest]
     return df
 
 df = slider_filter(df)
 
 colfor_3.write('Alle forslag ud fra valgte kriterier')
-container.table(df[['energylabel_id', 'investment', 'investmentlifetime', 'Adresse', 'use']].sort_values(['energylabel_id']))
+container.table(df[['energimærkeID', 'investering', 'levetid_ny', 'Adresse', 'Anvendelse']].sort_values(['energimærkeID']))
 
 
 
@@ -945,15 +1043,15 @@ with st.expander("Rapport med energiforslag"):
 kolonne_valg = coldown_2.multiselect(
     "Hvilke kolonner?",
     options=df.columns,
-    default=('energylabel_id', 'investment', 'investmentlifetime', 'Adresse', 'use')
+    default=('energimærkeID', 'investering', 'levetid_ny', 'Adresse', 'Anvendelse')
 )
 Forslag = df[df.columns.intersection(kolonne_valg)]
-Forslag.sort_values(['energylabel_id'])
+Forslag.sort_values(['energimærkeID'])
 
 @st.cache
 def convert_df_csv(df):
     # IMPORTANT: Cache the conversion to prevent computation on every rerun
-    return df.to_csv().encode('utf-8')
+    return df.to_csv().encode('utf-8-sig')
 
 @st.cache
 def convert_df_excel(df):
@@ -969,6 +1067,7 @@ def convert_df_excel(df):
     return processed_data
 
 csv   = convert_df_csv(df)
+orig  = convert_df_csv(df_base)
 excel = convert_df_excel(df)
 
 coldown_1.download_button(
@@ -981,6 +1080,12 @@ coldown_1.download_button(
                           label='📥 Download forslag som CSV fil',
                           data=csv,
                           file_name='Energimærkeforslag.csv',
+                          mime='text/csv'
+)
+coldown_1.download_button(
+                          label='📥 Download original som CSV fil',
+                          data=orig,
+                          file_name='Energimærkeforslag_original.csv',
                           mime='text/csv'
 )
 

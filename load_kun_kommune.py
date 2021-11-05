@@ -38,7 +38,7 @@ print(cursor.execute(sql).fetchall())
 start_time = time.time()
 
 df_build = pd.read_sql(
-    """select  * from energylabels.building_data where energylabel_id in (310001535)""",
+    """select  DISTINCT ownership from energylabels.building_data""",
     cnxn,
 )
 print("--- Build %s seconds ---" % (time.time() - start_time))
@@ -46,8 +46,8 @@ print(df_build)
 df_creation = pd.read_sql("""select top 10 * from energylabels.creation_data""", cnxn)
 print("--- Creation %s seconds ---" % (time.time() - start_time))
 
-eID_list = df_build['energylabel_id'].unique()
-print(df_build.energylabel_id.nunique())
+#eID_list = df_build['energylabel_id'].unique()
+#print(df_build.energylabel_id.nunique())
 
 
 # %% ####################################################################################################
