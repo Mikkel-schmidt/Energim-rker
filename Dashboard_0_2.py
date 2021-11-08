@@ -86,7 +86,7 @@ def hent_data(BBR_list, ener_list):
     #     + ";PWD="
     #     + PASSWORD
     # )
-    cnxn = db.connect(host=SERVER, database=DATABASE, user=USER, password=PASSWORD, port=PORT)
+    cnxn = db.connect(host=db_SERVER, database=db_DATABASE, user=db_USER, password=db_PASSWORD, port=db_PORT)
     # sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals;"
     # cursor = cnxn.cursor()
     # print(cursor.execute(sql).fetchall())
