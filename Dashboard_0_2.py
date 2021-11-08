@@ -70,7 +70,7 @@ EnergimærkeID
 @st.experimental_memo
 def hent_data(BBR_list, ener_list):
     start_time = time.time()
-    SERVER = "redshift.bi.obviux.dk"
+    SERVER = "52.214.192.89"#"redshift.bi.obviux.dk"
     PORT = '5439'  # Redshift default
     USER = "mrs"
     PASSWORD = "j89Foijf8fIJFAD8dsIFJA8DFMasf_D7fa9df"
