@@ -9,6 +9,7 @@ black==21.9b0
 bleach==4.1.0
 blinker==1.4
 cachetools==4.2.2
+cargo==0.3
 certifi==2021.5.30
 cffi==1.14.6
 charset-normalizer==2.0.6
@@ -24,6 +25,7 @@ eplot==0.1.2
 filelock==3.0.12
 gitdb==4.0.7
 GitPython==3.1.24
+greenlet==1.1.2
 idna==3.2
 ipykernel==6.4.1
 ipython==7.27.0
@@ -62,6 +64,7 @@ prettytable==2.2.1
 prometheus-client==0.11.0
 prompt-toolkit==3.0.20
 protobuf==3.18.0
+psycopg2==2.9.1
 pyarrow==5.0.0
 pycparser==2.20
 pydeck==0.7.0
@@ -69,11 +72,13 @@ pyecharts==1.9.0
 Pygments==2.10.0
 pyodbc==4.0.32
 pyparsing==2.4.7
+pypiwin32==223
 pyrsistent==0.18.0
 python-dateutil==2.8.2
 python-jsonrpc-server==0.4.0
 python-language-server==0.36.2
 pytz==2021.3
+pywinpty==1.1.5
 pyxlsb==1.0.8
 pyzmq==22.3.0
 regex==2021.8.28
@@ -84,7 +89,9 @@ Send2Trash==1.8.0
 simplejson==3.17.5
 six==1.16.0
 smmap==4.0.0
-streamlit==1.0.0
+SQLAlchemy==1.4.26
+sqlalchemy-redshift==0.8.8
+streamlit==1.1.0
 streamlit-echarts==0.3.0
 tdqm==0.0.1
 tenacity==8.0.1

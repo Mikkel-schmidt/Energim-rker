@@ -15,6 +15,7 @@ import math
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Pie, Grid, Line, Scatter, Sankey
 from streamlit_echarts import st_pyecharts
+import psycopg2 as db
 
 pio.templates.default = "simple_white"
 
@@ -70,24 +71,25 @@ EnergimærkeID
 def hent_data(BBR_list, ener_list):
     start_time = time.time()
     SERVER = "redshift.bi.obviux.dk"
-    PORT = 5439  # Redshift default
+    PORT = '5439'  # Redshift default
     USER = "mrs"
     PASSWORD = "j89Foijf8fIJFAD8dsIFJA8DFMasf_D7fa9df"
     DATABASE = "redshift"
 
-    cnxn = pyodbc.connect(
-        "DRIVER={Amazon Redshift (x64)};SERVER="
-        + SERVER
-        + ";DATABASE="
-        + DATABASE
-        + ";UID="
-        + USER
-        + ";PWD="
-        + PASSWORD
-    )
-    sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals;"
-    cursor = cnxn.cursor()
-    print(cursor.execute(sql).fetchall())
+    # cnxn = pyodbc.connect(
+    #     "DRIVER={Amazon Redshift (x64)};SERVER="
+    #     + SERVER
+    #     + ";DATABASE="
+    #     + DATABASE
+    #     + ";UID="
+    #     + USER
+    #     + ";PWD="
+    #     + PASSWORD
+    # )
+    cnxn = db.connect(host=SERVER, database=DATABASE, user=USER, password=PASSWORD, port=PORT)
+    # sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals;"
+    # cursor = cnxn.cursor()
+    # print(cursor.execute(sql).fetchall())
     print("Connected to Redshift")
 
     if BBR0:
