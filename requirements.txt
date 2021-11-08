@@ -64,6 +64,8 @@ prettytable==2.2.1
 prometheus-client==0.11.0
 prompt-toolkit==3.0.20
 protobuf==3.18.0
+psycopg2-binary==2.9.1
+psycopg2==2.9.1
 pyarrow==5.0.0
 pycparser==2.20
 pydeck==0.7.0
