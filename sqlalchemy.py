@@ -1,5 +1,5 @@
 import sqlalchemy
-import psycopg2
+#import psycopg2 as db
 from sqlalchemy import create_engine
 import pandas as pd
 
@@ -32,7 +32,7 @@ DATABASE = "redshift"
 #                        + '&Port='
 #                        + PORT)
 
-engine = db.connect(host='redshift://redshift.bi.obviux.dk', database=DATABASE, user=USER, password=PASSWORD, port=PORT)
+engine = db.connect(host=SERVER, database=DATABASE, user=USER, password=PASSWORD, port=PORT)
 
 sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals;"
 n = 100
