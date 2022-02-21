@@ -21,28 +21,17 @@ import psycopg2 as db
 import pulp
 from pulp import *
 import time
-import urllib.request as request
-import urllib
-import json
-import contextlib
-import re
 
+pio.templates.default = "simple_white"
 pd.options.display.float_format = '{:,}'.format
 
-st.set_page_config(layout="wide", page_title="Energy+improvements", page_icon="andel_e.png")
+st.set_page_config(layout="wide", page_title="Energy+projects", page_icon="andel_e.png")
 
 st.image('Energy+.png', width=800)
 
 start_time = time.time()
 st.sidebar.image("andel_logo_white_rgb.png")
 st.sidebar.write("Version 0.2")
-
-
-# """
-# The following section checks if any files are uploaded containing BBR information or energylabel IDs
-# If they are then prepare them for the SQL queries below.
-# """
-
 with st.sidebar.expander("Upload BBR data"):
     st.write("Data skal stå på følgende måde:")
     st.code(
@@ -80,63 +69,10 @@ EnergimærkeID
     else:
         ener_list=[]
 
-with st.sidebar.expander('Søg efter firma eller kommune'):
-
-    @st.cache
-    def cvrapi(cvr, country='dk'):
-      request_a = request.Request(
-        url='http://cvrapi.dk/api?search=%s&country=%s' % (urllib.parse.quote(cvr), country),
-        headers={
-          'User-Agent': 'Andel'})
-      with contextlib.closing(request.urlopen(request_a)) as response:
-        return json.loads(response.read())
-
-    cvrsøg = st.text_input('Hvilket firma søger du efter?')
-    if cvrsøg:
-        cvr = cvrapi(cvrsøg)
-
-        if 'name' in cvr:
-            st.write(cvr['name'])
-        st.code(cvr)
-        outer_dictionary = cvr
-        list_of_dictionaries = outer_dictionary['productionunits']
-
-        adress = []
-        post = []
-        for dictionary in list_of_dictionaries:
-            if "address" in dictionary:
-                adress.append(dictionary["address"])
-                post.append(dictionary["zipcode"])
-
-        st.code(adress)
-        st.code(post)
-        adress = pd.DataFrame(adress, columns = ['Adresse'])
-        st.write(adress)
-        adress[['streetname', 'housenumber', '', 'floor']] = adress['Adresse'].str.extract(r'([A-Za-z ]+)([\d]+)(,?(.*))')
-        adress['streetname'] = adress['streetname'].str.strip()
-    else:
-        adress = []
-        cvr = []
-        #adress = re.split(r'(^[^\d]+)', string)[1:]
-    st.code(adress)
-
-
 
 # %% Data loading ###############################################################################################################################
 @st.experimental_memo
 def kommune_og_ejerskab():
-    """
-    Finder unikke værdier på kommune og ejerskab i den forbundne database.
-
-    Parameters
-    ----------
-    None
-
-    Returns
-    -------
-    kommune     en liste med de unikke kommuner
-    ejerskab    en liste med de unikke ejerskabsformer
-    """
     SERVER = "redshift.bi.obviux.dk"
     PORT = '5439'  # Redshift default
     USER = "mrs"
@@ -280,9 +216,6 @@ def kommune_og_ejerskab():
 
 kommune, ejerskab = kommune_og_ejerskab()
 
-# I denne sektion vælger man kommune og ejerskab.
-# Koden stopper og giver advarsel hvis der ikke er valgt værdi på begge.
-
 with st.sidebar.expander('Vælg kommune og ejerskab'):
     container = st.container()
     all = st.checkbox("Vælg alle kommuner")
@@ -307,15 +240,13 @@ with st.sidebar.expander('Vælg kommune og ejerskab'):
             options=list(np.unique(ejerskab["ejerskab"])))
     st.info('Vælg kun det data der skal bruges')
 
-if not BBR0:
-    if not ener_list:
-        if not cvr:
-            if not municipalities:
-                st.info('Du skal vælge en kommune')
-                st.stop()
-            if not bygningstyper:
-                st.info('Du skal vælge en ejerskabsform')
-                st.stop()
+
+if not municipalities:
+    st.info('Du skal vælge en kommune')
+    st.stop()
+if not bygningstyper:
+    st.info('Du skal vælge en ejerskabsform')
+    st.stop()
 
 
 kommune = kommune[kommune['Kommune'].isin(municipalities)]
@@ -324,25 +255,7 @@ ejerskab = ejerskab[ejerskab['ejerskab'].isin(bygningstyper)]
 
 # %%
 @st.experimental_memo
-def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
-    """
-    Forbinder til Redshift serveren med EMO data.
-    Afhængig af inputs i BBR eller energimærkeID henter den de samme kolonner, men kun for energimærker fundet i BBR eller energimærkeID listen.
-    Hvis ingen filer i BBR eller energimærkeID finder den alle energimærker der er i valgte kommuner og ejerskab.
-
-        Parameters
-        ----------
-        BBR0            Liste af kommune BBR numre
-        BBR1            Liste af ejendoms BBR numre
-        ener_list       Liste af energimærkeID uploadet
-        kommune         Liste af valgte kommuner
-        ejerskab        Liste af ejerskabsformer
-
-        Returns
-        -------
-        df              Pandas DataFrame med alle kolonnerne der står i querien kun fra energimærker i valgte begrænsninger (se ovenstående)
-        data_time       Antal sekunder for at hente data
-    """
+def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab):
     start_time = time.time()
     SERVER = "redshift.bi.obviux.dk"
     PORT = '5439'  # Redshift default
@@ -359,7 +272,7 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id,, build.addressname build.ownership, build.reviewdate, CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
+                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.ownership, build.reviewdate, CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
                 WHERE (municipalitynumber IN {}) AND (propertynumber IN {})
@@ -369,7 +282,7 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
                 prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
-                build.propertynumber, build.building_id, build.addressname, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -395,7 +308,7 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, build.propertynumber, build.building_id, build.addressname, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                SELECT energylabel_id, build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
                 WHERE energylabel_id IN {}
@@ -405,7 +318,7 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
                 prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
-                build.propertynumber, build.building_id, build.addressname, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -425,47 +338,12 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
         df = pd.concat(dfs)
         print("--- df %s seconds ---" % (time.time() - start_time))
 
-    elif cvr:
-        print('Firma energimærker')
-        query = """
-                WITH build AS
-                (
-                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.addressname, build.ownership, build.reviewdate, CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
-                build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
-                FROM energylabels.building_data AS build
-                WHERE (streetname IN {}) AND (housenumber IN {}) AND (postalcode in {})
-                )
-                SELECT build.energylabel_id,
-                fuel.proposal_group_id, fuel.fuelsaved, fuel.material, fuel.unit,
-                fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
-                prof.profitability, prop_group.investment, prof.investmentlifetime,
-                prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
-                build.propertynumber, build.building_id, build.addressname, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
-                build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
-                result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
-                result.resultforallproposals_energylabelclassification, result.energylabelclassification
-
-                FROM energylabels.results_fuelsavings AS fuel
-                RIGHT JOIN build ON build.energylabel_id = fuel.energylabel_id
-                LEFT JOIN energylabels.results_profitability AS prof ON build.energylabel_id = prof.energylabel_id AND fuel.proposal_group_id = prof.proposal_group_id
-                LEFT JOIN energylabels.result_data_energylabels AS result ON build.energylabel_id = result.energylabel_id
-                LEFT JOIN energylabels.proposal_groups AS prop_group ON build.energylabel_id = prop_group.energylabel_id AND fuel.proposal_group_id = prop_group.proposal_group_id
-
-                ORDER BY build.energylabel_id, fuel.proposal_group_id, prof.proposal_group_id
-                """.format(tuple(adress['streetname'].replace("'","")), tuple(adress['housenumber']), tuple(post)) #.format(", ".join(adress['streetname']), ", ".join(adress['housenumber']) ) #
-        n = 10000
-        dfs = []
-        for chunk in tqdm(pd.read_sql(query, con=cnxn, chunksize=n)):
-            dfs.append(chunk)
-        df = pd.concat(dfs)
-        print("--- df %s seconds ---" % (time.time() - start_time))
-
     else:
         print('Normal datahentning')
         query = """
                 WITH build AS
                 (
-                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.addressname, build.ownership, build.reviewdate,  CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
+                SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.ownership, build.reviewdate,  CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
                 FROM energylabels.building_data AS build
                 WHERE (municipalitynumber IN {}) AND (ownership IN {})
@@ -476,7 +354,7 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
                 fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
                 prof.profitability, prop_group.investment, prof.investmentlifetime,
                 prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
-                build.propertynumber, build.building_id, build.addressname, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+                build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
                 build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
                 result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
                 result.resultforallproposals_energylabelclassification, result.energylabelclassification
@@ -500,23 +378,12 @@ def hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr):
 
     return df, data_time  #
 
-df_start, data_time = hent_data(BBR0, BBR1, ener_list, kommune, ejerskab, cvr)
+df_start, data_time = hent_data(BBR0, BBR1, ener_list, kommune, ejerskab)
 dF_start = df_start.drop_duplicates(['energylabel_id', 'proposal_group_id', 'fuelsaved', 'material'], keep='first', inplace=True)
 emo_antal = df_start['energylabel_id'].nunique()
 # %% Data cleaning ################################################################################################################################
 @st.experimental_memo
 def oversat_kolonnenavne(df):
-    """
-    Oversætter alle kolonnenavnene
-
-        Parameters
-        ----------
-        df              Rå Pandas DataFrame fra hent data
-
-        Returns
-        -------
-        df              Pandas DataFrame med oversatte kolonnenavne
-    """
     df.rename(columns={
                        'energylabel_id': 'EnergimærkeID',
                        'proposal_group_id': 'Forslagets gruppe ID',
@@ -539,7 +406,6 @@ def oversat_kolonnenavne(df):
                        'ownership': 'ejerskab',
                        'reviewdate': 'besigtigelsesdato',
                        'municipalitynumber': 'kommunenr',
-                       'addressname': 'Adressenavn',
                        'streetname': 'vejnavn',
                        'housenumber': 'husnr',
                        'postalcode': 'postnr',
@@ -558,19 +424,6 @@ def oversat_kolonnenavne(df):
 
 @st.experimental_memo
 def data_cleaning(df):
-    """
-    Oversætter talværdier til kommunenavne, anvendelsesnavne, teknikområde, håndværkstype
-    Oversætter materiale og ejerskab til dansk
-    Laver nye kolonner om adresse, areal og år
-
-        Parameters
-        ----------
-        df              Pandas Dataframe givet ved oversat_kolonnenavne funktionen.
-
-        Returns
-        -------
-        df              Pandas DataFrame der har de ovenstående rettelser ift. input.
-    """
     df = oversat_kolonnenavne(df)
 
     df["Kommune"] = df["kommunenr"].astype(str)
@@ -959,9 +812,6 @@ def data_cleaning(df):
 
 df = data_cleaning(df_start)
 
-
-# Mulighed for ekstra filtrering på baggrund af anvendelse, adresse eller teknikområde.
-
 with st.sidebar.expander('Vælg anvendelse, specifikke adresser eller teknikområde'):
     brugskode = st.multiselect(
         "Hvilke anvendelser skal medtages?",
@@ -979,9 +829,6 @@ with st.sidebar.expander('Vælg anvendelse, specifikke adresser eller teknikomr�
 
 @st.experimental_memo
 def filtrer_sidebar(df, brugskode, adresse, teknik):
-    """
-    Hvis der er valgte begrænsninger i anvendelse, adresse eller teknikområder skal den filtreres på disse.
-    """
     df = df
     if brugskode:
         df = df[df['Anvendelse'].isin(brugskode)]
@@ -994,9 +841,6 @@ def filtrer_sidebar(df, brugskode, adresse, teknik):
 df = filtrer_sidebar(df, brugskode, adresse, teknik)
 # df_orig = df
 emo_antal_orig = df["EnergimærkeID"].nunique()
-
-
-# Denne sektion giver mulighed for at opdatere priser og udledning på brændelstyper.
 
 with st.sidebar.expander('Justér pris og CO2 på enheder'):
     st.subheader('El')
@@ -1032,17 +876,6 @@ with st.sidebar.expander('Justér pris og CO2 på enheder'):
 
 @st.experimental_memo
 def udregn_co2(df):
-    """
-    Justerer CO2 udledningerne på brændselstyper
-
-        Parameters
-        ----------
-        df              Rå Pandas DataFrame
-
-        Returns
-        -------
-        df              Pandas DataFrame
-    """
     df['CO2 per enhed [g] rådata'] = df['CO2 per enhed [g]']
     df['besparelse kr. per enhed_orig'] = df['Besparelse kr. per enhed']
 
@@ -1064,20 +897,6 @@ df_orig = udregn_co2(df)
 
 @st.experimental_memo
 def fuel_calculations(df):
-    """
-    Udregner forslagenes samlede besparelse ift. kun besparelse på hver enkel brændstoftype - hvert forslag kan have flere brændstoftyper
-    Filtrerer desuden på meget store eller meget lave værdier hvor der er fejl i datasættet.
-
-        Parameters
-        ----------
-        df              Pandas DataFrame
-
-        Returns
-        -------
-        df              Pandas DataFrame med en række per forslag og samlet besparelse
-        df_s            Pandas DataFrame med alle rettelser inden forslag samles til en række per forslag.
-
-    """
     df = df[df['Brændstof'].notna()]
     df['Brændstof rådata'] = df['Brændstof']
     df['Besparelse Kr. mid'] = df['Brændstof'] * df['Besparelse kr. per enhed']
@@ -1126,7 +945,6 @@ def fuel_calculations(df):
                                                                                                'år': 'first',
                                                                                                'kommunenr': 'first',
                                                                                                'Kommune': 'first',
-                                                                                               'Adressenavn': 'first',
                                                                                                'vejnavn': 'first',
                                                                                                'husnr': 'first',
                                                                                                'postnr': 'first',
@@ -1159,28 +977,27 @@ def fuel_calculations(df):
 
 df, df_s = fuel_calculations(df)
 
-
-
-# Visualisér basis værdier på valgte energimærker.
-
 col0_1, col0_2, col0_3, col0_4 = st.columns(4)
 col0_1.metric('Antal forslag i valgt data', df.shape[0])
 col0_1.metric('Energimærker i valgt data', emo_antal_orig, emo_antal_orig-df["EnergimærkeID"].nunique())
-col0_2.metric('Samlet årlig energibesparelse', '{:.2f} mio. kWh'.format(df['Besparelse [kWh]'].sum()/1000000))
+col0_2.metric('Energisparepris', '{:.2f} Kr./kWh'.format(df["Investering"].sum()/df['Besparelse [kWh]'].sum()))
 col0_2.metric('CO2 sparepris', '{:.2f} Kr./kg'.format(df["Investering"].sum()/(df['Besparelse CO2 [g]'].sum()/1000)))
 col0_3.metric('Samlet årlig økonomisk besparelse', '{:.2f} mio. Kr/år.'.format(df['Besparelse [kr.]'].sum()/1000000))
 col0_3.metric('Samlet årlig klimamæssig besparelse', '{:.2f} Ton/år.'.format(df['Besparelse CO2 [g]'].sum()/1000000))
 col0_4.metric("Samlet investering i DKK", '{:.2f} mio. Kr.'.format(np.sum(df["Investering"])/1000000))
 col0_4.metric("Median rentabilitet", '{:.2f}'.format(df['Rentabilitet'].median()))
 
+def style_negative(v, props=''):
+    return props if v < 0 else None
+
 with st.expander("Data oversigt"):
     container = st.container()
     col_1, col_2 = container.columns(2)
 
     # # container.write(df.head(100000).style.background_gradient(cmap='Blues').set_precision(2))
-    #container.write(df_s[['Forslagets gruppe ID', 'Adresse', 'Adressenavn', 'Teknikområde', 'Tekst', 'Investering', 'Materiale', 'Brændstof', 'Brændstof rådata', 'år', 'Besparelse [kr.]', 'Besparelse Kr. mid', 'Besparelse CO2 [g]', 'CO2 per enhed [g]', 'CO2 per enhed [g] rådata', 'Besparelse kr. per enhed', 'Rentabilitet']])
-    #container.write(df.head(10000))
-    container.write(df[['Forslagets gruppe ID', 'Adresse', 'postnr', 'by', 'Adressenavn', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'TBT', 'Materiale', 'Brændstof', 'Brændstof rådata', 'år', 'Besparelse Kr. mid', 'Besparelse [kr.]_orig', 'besp_diff', 'Besparelse CO2 [g]', 'CO2 per enhed [g]', 'CO2 per enhed [g] rådata', 'Besparelse kr. per enhed', 'Rentabilitet', 'rentabilitet_ny', 'levetid_ny']]\
+    container.write(df_s[['Forslagets gruppe ID', 'Adresse', 'Teknikområde', 'Tekst', 'Investering', 'Materiale', 'Brændstof', 'Brændstof rådata', 'år', 'Besparelse [kr.]', 'Besparelse Kr. mid', 'Besparelse CO2 [g]', 'CO2 per enhed [g]', 'CO2 per enhed [g] rådata', 'Besparelse kr. per enhed', 'Rentabilitet']])
+    container.write(df.head(10000))
+    container.write(df[['Forslagets gruppe ID', 'Adresse', 'postnr', 'by', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'TBT', 'Materiale', 'Brændstof', 'Brændstof rådata', 'år', 'Besparelse Kr. mid', 'Besparelse [kr.]_orig', 'besp_diff', 'Besparelse CO2 [g]', 'CO2 per enhed [g]', 'CO2 per enhed [g] rådata', 'Besparelse kr. per enhed', 'Rentabilitet', 'rentabilitet_ny', 'levetid_ny']]\
                     .style.background_gradient(cmap='Blues').set_precision(2))
     # # container.write(df_orig.head(1000))
 
@@ -1470,15 +1287,11 @@ with st.expander("Potentiale ved de enkelte teknikområder"):
 
     valg = colfor_3.selectbox('Hvad skal vises?', options=['Investering',
                                                             'Besparelse [kr.]',
-                                                            'Besparelse CO2 [g]',
-                                                            'besp per inv'])
+                                                            'Besparelse CO2 [g]'])
 
     def crosst(df, valg):
         df_t = df[df['Anvendelse'].isin(anv) & df['Teknikområde'].isin(teo) & df['håndværkstype'].isin(hvt)]
-        if valg == 'besp per inv':
-            cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t['Besparelse [kr.]']/df['Investering'], aggfunc='mean')
-        else:
-            cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t[valg], aggfunc='sum')
+        cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t[valg], aggfunc='sum')
         return cross
 
     cross = crosst(df, valg)
@@ -1909,7 +1722,7 @@ with st.expander("Forslag"):
     col4.metric('Antal forslag', df1.shape[0])
     col4.metric('Gennemsnitlig tilbagebetalingstid [år]', '{:,.2f} år'.format(df1['TBT'].sum()/df1.shape[0]))
     col4.metric('Median rentabilitet', '{:,.2f}'.format(df1['Rentabilitet'].median()))
-    st.write(df1[['Adresse', 'Adressenavn', 'by', 'år', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]', 'Rentabilitet', 'TBT']]\
+    st.write(df1[['Adresse', 'by', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]', 'Rentabilitet', 'TBT']]\
              .style.background_gradient(cmap='Blues').set_precision(2))
 
 
@@ -1958,7 +1771,6 @@ with st.expander("Forslag"):
         #     df_prop = pd.concat(dfs)
         #     print("--- df %s seconds ---" % (time.time() - start_time))
 
-
 @st.experimental_memo
 def hent_input(kommune,ejerskab):
     start_time = time.time()
@@ -2002,13 +1814,12 @@ def hent_input(kommune,ejerskab):
 
 @st.experimental_memo
 def input_data(df1, df_input):
-    df_i = pd.merge(df1, df_input, on=['EnergimærkeID'])
-    df_i = df_i[['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
-    df_i = df_i.groupby(['Adresse', 'Adressenavn',  'zone_id', 'data_kategori']).first().reset_index()
-    df_i = df_i[['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
+    df_i = pd.merge(df1, df_input, on=['EnergimærkeID', 'Tekniknr'])
+    df_i = df_i[['Adresse', 'bygningsnr', 'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
+    df_i = df_i.groupby(['Adresse', 'bygningsnr', 'zone_id', 'data_kategori']).first().reset_index()
+    df_i['data_værdi'] = pd.to_numeric(df_i['data_værdi'], errors='coerce')
+    df_i = df_i[['Adresse', 'bygningsnr', 'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
     return df_i
-
-
 
 @st.experimental_memo
 def hent_forslag(kommune,ejerskab):
@@ -2058,10 +1869,10 @@ def hent_forslag(kommune,ejerskab):
 @st.experimental_memo
 def forslag_data(df1, df_input):
     df_f = pd.merge(df1, df_input, on=['EnergimærkeID', 'Tekniknr'])
-    df_f = df_f[['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
-    df_f = df_f.groupby(['Adresse', 'Adressenavn',  'zone_id', 'data_kategori']).first().reset_index()
-    #df_f['data_værdi'] = pd.to_numeric(df_f['data_værdi'], errors='coerce')
-    df_f = df_f[['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
+    df_f = df_f[['Adresse', 'bygningsnr', 'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
+    df_f = df_f.groupby(['Adresse', 'bygningsnr', 'zone_id', 'data_kategori']).first().reset_index()
+    df_f['data_værdi'] = pd.to_numeric(df_f['data_værdi'], errors='coerce')
+    df_f = df_f[['Adresse', 'bygningsnr', 'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
     return df_f
 
 df_input, data_time_input = hent_input(kommune, ejerskab)
@@ -2073,7 +1884,9 @@ df_forslag = oversat_kolonnenavne(df_forslag)
 df_i = input_data(df1, df_input)
 df_f = forslag_data(df1, df_forslag)
 
-df_f = df_i.merge(df_f, on=['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'data_kategori'], suffixes=(' input', ' forslag'))
+df_f = df_i.merge(df_f, on=['Adresse', 'bygningsnr', 'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'data_kategori'], suffixes=(' input', ' forslag'))
+
+
 
 
 
@@ -2112,8 +1925,8 @@ with st.expander("Rapport med energiforslag"):
     else:
         kolonne_valg =  container.multiselect("Vælg de kolonner der skal vises",
             options=df1.columns,
-            default=('EnergimærkeID', 'Forslagets gruppe ID', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]', 'Besparelse [kWh]',
-                     'levetid_ny', 'Rentabilitet', 'TBT', 'Kommune', 'ejendomsnr', 'Adresse', 'Adressenavn', 'by', 'Anvendelse', 'ejerskab', 'areal', 'besigtigelsesdato')
+            default=('EnergimærkeID', 'Forslagets gruppe ID', 'Teknikområde', 'Tekst', 'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]',
+                     'levetid_ny', 'Rentabilitet', 'TBT', 'Kommune', 'ejendomsnr', 'bygningsnr', 'Adresse', 'by', 'Anvendelse', 'ejerskab', 'areal', 'besigtigelsesdato')
         )
 
     forslag = df1[df1.columns.intersection(kolonne_valg)]
@@ -2256,9 +2069,9 @@ with st.expander("Rapport med energiforslag"):
     # csv_i   = convert_df_csv(df_i)
     csv_f   = convert_df_csv(df_f)
     csv     = convert_df_csv(forslag)
-    liste = ['Adresse', 'Adressenavn', 'by',  'Teknikområde', 'Tekst',  'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]', 'Rentabilitet', 'EnergimærkeID', 'Forslagets gruppe ID']
-    excel = convert_df_excel(df1, liste)
-    liste = ['Adresse', 'Adressenavn', 'by',  'Teknikområde', 'Tekst',  'Investering', 'Besparelse [kr.]', 'Rentabilitet', 'EnergimærkeID', 'Forslagets gruppe ID']
+    liste = ['Adresse', 'by', 'bygningsnr', 'Teknikområde', 'Tekst',  'Investering', 'Besparelse [kr.]', 'Besparelse CO2 [g]', 'Rentabilitet', 'EnergimærkeID', 'Forslagets gruppe ID']
+    excel = convert_df_excel(df, liste)
+    liste = ['Adresse', 'by', 'bygningsnr', 'Teknikområde', 'Tekst',  'Investering', 'Besparelse [kr.]', 'Rentabilitet', 'EnergimærkeID', 'Forslagets gruppe ID']
     orig = convert_df_excel(df_s, liste)
 
     coldown_1.subheader('Download udtræk af forslag')
@@ -2310,15 +2123,13 @@ with st.expander("info"):
     @st.experimental_memo
     def samlet_info(df_f):
         #df_f = df_f[df_f['data_værdi'].str.isnumeric()]
-        df_f['data_værdi input'] = pd.to_numeric(df_f['data_værdi input'], errors='coerce')
-        df_f['data_værdi forslag'] = pd.to_numeric(df_f['data_værdi forslag'], errors='coerce')
         df_f = df_f[(df_f['data_kategori'] == 'Length') |
                     (df_f['data_kategori'] == 'NumberOfPumps') |
                     (df_f['data_kategori'] == 'NumberOfEntities') |
                     (df_f['data_kategori'] == 'Area')]
         #df_f['data_værdi'] = pd.to_numeric(df_f['data_værdi'])
         #st.write(df_f.head(1000))
-        tekst = df_f.groupby(['tekst input', 'tekst forslag']).agg({'data_kategori': 'first', 'data_værdi forslag':'sum', 'data_værdi input':'sum',  'EnergimærkeID': 'count'}).reset_index()
+        tekst = df_f.groupby(['tekst forslag', 'tekst input']).agg({'data_kategori': 'first', 'data_værdi forslag':'sum', 'data_værdi input':'sum',  'EnergimærkeID': 'count'}).reset_index()
         df_f = df_f.groupby(['Adresse', 'Teknikområde', 'data_kategori']).sum().reset_index()
 
 
@@ -2350,13 +2161,7 @@ with st.expander("info"):
         st.write(df_f.head(1000))
 
 
-    csvvvv = convert_df_csv(tekst_f)
-    st.download_button(
-                              label='📥 Download oprindelig data',
-                              data=csvvvv,
-                              file_name='samlet.csv',
-                              mime='csv'
-    )
+
 
 
 

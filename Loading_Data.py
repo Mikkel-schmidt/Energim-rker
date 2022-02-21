@@ -28,9 +28,9 @@ cnxn = pyodbc.connect(
     + ";PWD="
     + PASSWORD
 )
-#sql = "SELECT  * FROM energylabels.building_data;"
-#cursor = cnxn.cursor()
-#print(cursor.execute(sql).fetchone())
+sql = "SELECT  * FROM energylabels.building_data;"
+cursor = cnxn.cursor()
+print(cursor.execute(sql).fetchone())
 
 print("Connected to Redshift")
 
@@ -65,14 +65,17 @@ df_creation = pd.read_sql(
 )
 print("--- Creation %s seconds ---" % (time.time() - start_time))
 
+
+# %%
 start_time = time.time()
 df_input = pd.read_sql(
-    """select top 100000 * from redshift.energylabels.input_data""", cnxn
+    """select top 100000 * from redshift.energylabels.input_data where seebclassification = 2-1-5-0""", cnxn
 )
 print("--- Input %s seconds ---" % (time.time() - start_time))
-
+print(df_input.head(10000))
+# %%
 start_time = time.time()
-df_build = pd.read_sql("""select * from redshift.energylabels.building_data""", cnxn)
+df_build = pd.read_sql("""select top 10000 * from redshift.energylabels.building_data""", cnxn)
 print("--- Build %s seconds ---" % (time.time() - start_time))
 
 start_time = time.time()
@@ -294,7 +297,7 @@ df_prop = pd.read_sql(
     """select  * from energylabels.proposals where energylabel_id IN (311418890) """,
     cnxn,
 )
-
+# %%
 proposal_group_references = pd.read_sql(
     """select * from energylabels.proposal_group_references where energylabel_id IN (311418890)""",
     cnxn,

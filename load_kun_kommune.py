@@ -7,11 +7,26 @@ import seaborn as sns
 import streamlit as st
 from tqdm import tqdm
 import time
+import os
+print(os.getcwd())
 
-#BBR_list = list(np.loadtxt('energimærker', delimiter=""))
+pd.set_option("max_rows", None)
+pd.set_option("max_columns", None)
+
+# %%
+
+BBR_list = np.loadtxt('EMO/Roskilde_BBR11.txt', delimiter="\t", dtype="str")
 #BBR = np.array(BBR_list)
+
+BBR0 = tuple(BBR_list[:,0])
+BBR1 = tuple(BBR_list[:,1])
+print(BBR1)
+BBR1 = np.char.zfill(BBR1, 6)
+print(BBR1)
 #BBR_tuple = BBR[:,0]
 #print(BBR_tuple)
+
+# %%
 
 SERVER = "redshift.bi.obviux.dk"
 PORT = 5439  # Redshift default
@@ -33,16 +48,63 @@ sql = "SELECT COUNT(shorttext) FROM redshift.energylabels.proposals"
 cursor = cnxn.cursor()
 print(cursor.execute(sql).fetchall())
 
+# %% ###########################################################################
+
+query = """
+        WITH build AS
+        (
+        SELECT energylabel_id, CAST(build.propertynumber AS INT), build.building_id, build.ownership, build.reviewdate, CAST(build.municipalitynumber AS INT), build.streetname, build.housenumber,
+        build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea
+        FROM energylabels.building_data AS build
+        WHERE (municipalitynumber IN {}) AND (STR(propertynumber) IN {})
+        )
+        SELECT build.energylabel_id,
+        fuel.proposal_group_id, fuel.fuelsaved, fuel.material, fuel.unit,
+        fuel.energyperunit, fuel.co2perunit, fuel.costperunit, fuel.fixedcostperyear, fuel.original_cost,
+        prof.profitability, prop_group.investment, prof.investmentlifetime,
+        prop_group.shorttext, prop_group.longttext, prop_group.seebclassification,
+        build.propertynumber, build.building_id, build.ownership, build.reviewdate, build.municipalitynumber, build.streetname, build.housenumber,
+        build.postalcode, build.postalcity, build.usecode, build.dwellingarea, build.commercialarea,
+        result.status_energylabelclassification, result.resultforallprofitable_energylabelclassification,
+        result.resultforallproposals_energylabelclassification, result.energylabelclassification
+
+        FROM energylabels.results_fuelsavings AS fuel
+        RIGHT JOIN build ON build.energylabel_id = fuel.energylabel_id
+        LEFT JOIN energylabels.results_profitability AS prof ON build.energylabel_id = prof.energylabel_id AND fuel.proposal_group_id = prof.proposal_group_id
+        LEFT JOIN energylabels.result_data_energylabels AS result ON build.energylabel_id = result.energylabel_id
+        LEFT JOIN energylabels.proposal_groups AS prop_group ON build.energylabel_id = prop_group.energylabel_id AND fuel.proposal_group_id = prop_group.proposal_group_id
+
+        ORDER BY build.energylabel_id, fuel.proposal_group_id, prof.proposal_group_id
+        """.format(BBR0, BBR1)
+
+n = 10000
+dfs = []
+for chunk in tqdm(pd.read_sql(query, con=cnxn, chunksize=n)):
+    dfs.append(chunk)
+df = pd.concat(dfs)
+print("--- df %s seconds ---" % (time.time() - start_time))
+
+
+
+
+
+
+
+
+
+
+
+
 # %% ###################################################################################################
 
 start_time = time.time()
 
 df_build = pd.read_sql(
-    """select  DISTINCT ownership from energylabels.building_data""",
+    """select top 100000 * from redshift.energylabels.proposals where seebclassification = '2-1-5-0'""",
     cnxn,
 )
 print("--- Build %s seconds ---" % (time.time() - start_time))
-print(df_build)
+df_build.sort_values('energylabel_id').head(1000)
 df_creation = pd.read_sql("""select top 10 * from energylabels.creation_data""", cnxn)
 print("--- Creation %s seconds ---" % (time.time() - start_time))
 
@@ -90,16 +152,53 @@ print(df_prop.energylabel_id.nunique())
 
 # %%
 df_build = pd.read_sql(
-    """select top 100 * from energylabels.building_data  """,
+    """select top 100 * from energylabels.proposal_groups where energylabel_id IN (311570424)  """,
     cnxn,
 )
-#print(df_build.head())
+df_build.head()
+
+# %%
 
 df_prop = pd.read_sql(
-    """select  * from energylabels.result_data_energylabels where energylabel_id IN (311001601) """,
+    """select energylabel_id, validfrom from energylabels.creation_data
+    ORDER BY energylabel_id DESC""",
     cnxn,
 )
-print(df_build.columns)
+df_prop.head(1000)
+
+# %%
+print(df_prop.max(1000))
+
+# %%
+#print(df_prop.head(1000))
+
+# %%
+print(df_prop['data_input_type'].unique())
+
+df_prop[df_prop['data_input_type'] == 'Boiler'].head(100)
+
+df_prop.sort_values('shorttext')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # %%
@@ -210,3 +309,48 @@ energy = pd.read_sql(
 )
 
 energy.shape
+# %%
+
+import pulp
+pulp.pulpTestAll()
+
+# %%
+
+
+df_prop = pd.read_sql(
+    """select  * from energylabels.proposals where energylabel_id IN (311529163) """,
+    cnxn,
+)
+# %%
+proposal_group_references = pd.read_sql(
+    """select * from energylabels.proposal_group_references where energylabel_id IN (311529163)""",
+    cnxn,
+)
+
+proposal_groups = pd.read_sql(
+    """select  * from energylabels.proposal_groups where energylabel_id IN (311529163)""",
+    cnxn,
+)
+
+results_fuelsavings = pd.read_sql(
+    """select  * from energylabels.results_fuelsavings where energylabel_id IN (311529163)  """,
+    cnxn,
+)
+
+results_profitability = pd.read_sql(
+    """select * from energylabels.results_profitability where energylabel_id IN (311529163)""",
+    cnxn,
+)
+
+# %%
+df_prop.sort_values('shorttext')
+proposal_group_references.sort_values('proposal_id')
+proposal_groups.sort_values('shorttext')
+#results_fuelsavings.head()
+#results_profitability.head()
+
+
+
+
+
+# %%
