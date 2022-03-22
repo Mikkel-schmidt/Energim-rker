@@ -1476,7 +1476,7 @@ with st.expander("Potentiale ved de enkelte teknikområder"):
     def crosst(df, valg):
         df_t = df[df['Anvendelse'].isin(anv) & df['Teknikområde'].isin(teo) & df['håndværkstype'].isin(hvt)]
         if valg == 'besp per inv':
-            cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t['Besparelse [kr.]']/df['Investering'], aggfunc='mean')
+            cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t['Besparelse [kr.]']/df_t['Investering'], aggfunc='mean')
         else:
             cross = pd.crosstab(df_t['Teknikområde'], df_t['Anvendelse'], df_t[valg], aggfunc='sum')
         return cross
@@ -1594,6 +1594,42 @@ with st.expander("Potentiale ved priser"):
     col4.metric('Antal forslag', df[(df['Investering'] > mini) & (df['Investering'] < maxi)].shape[0])
     col4.metric('Gennemsnitlig tilbagebetalingstid [år]', '{:,.2f} år'.format(df['TBT'][(df['Investering'] > mini) & (df['Investering'] < maxi)].sum()/df[(df['Investering'] > mini) & (df['Investering'] < maxi)].shape[0]))
     col4.metric('Median rentabilitet', '{:,.2f}'.format(df['Rentabilitet'][(df['Investering'] > mini) & (df['Investering'] < maxi)].median()))
+
+
+########################## Potentiale priser ##################################
+
+with st.expander("Energimærkeklassificering"):
+    container = st.container()
+    colfor_1, colfor_2 = container.columns(2)
+    colfor_3, colfor_4 = container.columns(2)
+
+    emo = df.groupby('EnergimærkeID').agg({
+                                           'klassificering_status': 'first',
+                                           'klassificering rentable': 'first',
+                                           'klassificering alle': 'first',
+                                           'klassificering': 'first',
+                                           })
+    st.write(emo)
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(histfunc="count",  x=df['klassificering_status'], name='Klassificering'))
+    fig.add_trace(go.Histogram(histfunc="count",  x=df['klassificering rentable'], name='Alle rentable forslag'))
+    fig.add_trace(go.Histogram(histfunc="count",  x=df['klassificering alle'], name='Alle forslag'))
+    fig.update_xaxes(categoryorder='category descending')
+    st.plotly_chart(fig)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #################### Potentiale ###############################################
 
@@ -2064,16 +2100,17 @@ def forslag_data(df1, df_input):
     df_f = df_f[['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'tekst', 'data_kategori', 'data_værdi']]
     return df_f
 
-df_input, data_time_input = hent_input(kommune, ejerskab)
-df_forslag, data_time_input = hent_forslag(kommune, ejerskab)
-df_input = oversat_kolonnenavne(df_input)
-df_forslag = oversat_kolonnenavne(df_forslag)
+if kommune is not None:
+    df_input, data_time_input = hent_input(kommune, ejerskab)
+    df_forslag, data_time_input = hent_forslag(kommune, ejerskab)
+    df_input = oversat_kolonnenavne(df_input)
+    df_forslag = oversat_kolonnenavne(df_forslag)
 
 
-df_i = input_data(df1, df_input)
-df_f = forslag_data(df1, df_forslag)
+    df_i = input_data(df1, df_input)
+    df_f = forslag_data(df1, df_forslag)
 
-df_f = df_i.merge(df_f, on=['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'data_kategori'], suffixes=(' input', ' forslag'))
+    df_f = df_i.merge(df_f, on=['Adresse', 'Adressenavn',  'zone_id', 'postnr', 'by', 'EnergimærkeID', 'Teknikområde', 'data_kategori'], suffixes=(' input', ' forslag'))
 
 
 
@@ -2360,8 +2397,15 @@ with st.expander("info"):
 
 
 
-cloud = forslag['Teknikområde'].value_counts()
+# cloud = forslag['Teknikområde'].value_counts()
+# cloud = cloud.reset_index()
+#cloud['Teknikområde'] = df['Teknikområde']
+df = df[df['Teknikområde'] != 'Kedler']
+cloud = df.groupby('Teknikområde').sum()#df['Besparelse [kr.]']/df['Investering']
+cloud['besp'] = cloud['Besparelse [kr.]']/cloud['Investering']
+cloud = cloud['besp']
 cloud = cloud.reset_index()
+# st.write(cloud)
 cloud = [tuple(x) for x in cloud.to_numpy()]
 
 
